@@ -1,0 +1,25 @@
+name: digital_comics_flutter
+description: A minimal Flutter scaffold to compare with the existing web/Wails/Capacitor project
+publish_to: 'none'
+version: 0.0.1
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  archive: ^3.3.4
+  shared_preferences: ^2.2.0
+  path: ^1.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  # Include the project's thumbs and assets. Run `flutter/setup_assets.sh`
+  assets:
+    - assets/thumbs/
+    - assets/
