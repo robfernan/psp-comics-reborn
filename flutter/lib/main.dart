@@ -59,44 +59,61 @@ class FlameRibbonPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Base layer: subtle radial glow to frame the scene
-    final center = Offset(size.width / 2, size.height / 2);
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.red.withOpacity(0.15),
-          Colors.deepOrange.withOpacity(0.04),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: size.width * 0.8));
-    canvas.drawRect(Offset.zero & size, glowPaint);
+    // Left side atmospheric wisp — strong red/orange glow
+    _drawSideWisp(canvas, size, true);
 
-    // Main plasma layers — stacked semi-transparent waves with different frequencies
-    _drawWaveLayer(canvas, size, 5, 0.12, 0.04, Colors.red);
-    _drawWaveLayer(canvas, size, 7, 0.18, 0.06, Colors.deepOrange);
-    _drawWaveLayer(canvas, size, 10, 0.08, 0.08, Colors.redAccent);
+    // Right side atmospheric wisp — strong red/orange glow
+    _drawSideWisp(canvas, size, false);
   }
 
-  void _drawWaveLayer(Canvas canvas, Size size, int waveCount,
-      double amplitude, double speedMultiplier, Color color) {
+  void _drawSideWisp(Canvas canvas, Size size, bool isLeft) {
+    final centerX = isLeft ? -50.0 : size.width + 50.0;
+    final centerY = size.height / 2;
+
+    // Animated phase offset for organic motion
+    final timeOffset = animationValue * math.pi * 2;
+
+    // Draw multiple overlapping wave layers for depth
+    _drawWaveLayer(canvas, size, isLeft, 5, 0.15, 0.04,
+        const Color(0xFFFF3300).withOpacity(0.4), timeOffset);
+    _drawWaveLayer(canvas, size, isLeft, 7, 0.2, 0.06,
+        const Color(0xFFCC1100).withOpacity(0.35), timeOffset * 1.3);
+    _drawWaveLayer(canvas, size, isLeft, 10, 0.1, 0.08,
+        const Color(0xFFFF6600).withOpacity(0.3), timeOffset * 0.7);
+
+    // Add a static radial glow core for intensity
+    final glowPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 1.0,
+        colors: [
+          const Color(0xFFFF2200).withOpacity(0.5),
+          const Color(0xFF880000).withOpacity(0.25),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+          center: Offset(centerX, centerY), radius: size.width * 0.4));
+    canvas.drawRect(Offset.zero & size, glowPaint);
+  }
+
+  void _drawWaveLayer(Canvas canvas, Size size, bool isLeft, int waveCount,
+      double amplitude, double speedMultiplier, Color color, double timeOffset) {
     final paint = Paint()
-      ..color = color.withOpacity(0.2)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     final path = Path();
     path.moveTo(0, size.height);
 
-    // Calculate phase offset based on animation controller value
-    final timeOffset = animationValue * math.pi * 2 * speedMultiplier;
-
     for (double i = 0; i <= size.width; i++) {
-      // Create organic multi-layered wave math using combined sine/cosine waves
+      // Create organic multi-layered wave math
+      final double xNorm = i / size.width;
       final double wave1 =
-          math.sin((i / size.width * waveCount * math.pi) + timeOffset);
+          math.sin((xNorm * waveCount * math.pi) + timeOffset);
       final double wave2 = math.sin(
-          (i / size.width * waveCount * 1.5 * math.pi) + timeOffset * 2);
+          (xNorm * waveCount * 1.5 * math.pi) + timeOffset * 2);
       final double wave3 = math.cos(
-          (i / size.width * waveCount * 0.5 * math.pi) - timeOffset * 1.5);
+          (xNorm * waveCount * 0.5 * math.pi) - timeOffset * 1.5);
 
       // Combine waves and apply vertical amplitude modulation
       double y = size.height * 0.5 +
@@ -110,7 +127,7 @@ class FlameRibbonPainter extends CustomPainter {
 
     // Apply blur mask filter to soften edges into smoky ribbons
     canvas.drawPath(path,
-        paint..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15));
+        paint..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20));
   }
 
   @override
