@@ -567,7 +567,8 @@ export function App() {
 
   return (
     <div className="relative min-h-screen w-full bg-transparent text-white">
-      <div className="fixed inset-0 z-0 bg-black pointer-events-none" />
+      {/* Background layers: black base + animated ribbon shader */}
+      <div className="fixed inset-0 z-0 bg-[#0a0a0a] pointer-events-none" />
       <ShaderBackground />
 
       <div

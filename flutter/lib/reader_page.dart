@@ -20,6 +20,8 @@ class _ReaderPageState extends State<ReaderPage> {
   Offset pan = Offset.zero;
   bool loading = true;
   bool showPageCounter = true;
+  String readingDirection = 'ltr';
+  String fitMode = 'contain';
 
   @override
   void initState() {
@@ -32,6 +34,8 @@ class _ReaderPageState extends State<ReaderPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       showPageCounter = prefs.getBool('reader.showPageCounter') ?? true;
+      readingDirection = prefs.getString('reader.readingDirection') ?? 'ltr';
+      fitMode = prefs.getString('reader.fitMode') ?? 'contain';
     });
   }
 
@@ -49,7 +53,9 @@ class _ReaderPageState extends State<ReaderPage> {
     if (pages.isEmpty) return;
     setState(() {
       final maxIndex = pages.length - 1;
-      pageIndex = (pageIndex + delta).clamp(0, maxIndex);
+      // RTL reading direction reverses navigation
+      final effectiveDelta = readingDirection == 'rtl' ? -delta : delta;
+      pageIndex = (pageIndex + effectiveDelta).clamp(0, maxIndex);
     });
   }
 
@@ -99,9 +105,9 @@ class _ReaderPageState extends State<ReaderPage> {
                       child: isSpread
                           ? Row(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children: visiblePages.map((p) => Flexible(child: Image.memory(p, fit: BoxFit.contain))).toList(),
+                              children: visiblePages.map((p) => Flexible(child: Image.memory(p, fit: fitMode == 'cover' ? BoxFit.cover : BoxFit.contain))).toList(),
                             )
-                          : (visiblePages.isNotEmpty ? Image.memory(visiblePages.first, fit: BoxFit.contain) : const SizedBox.shrink()),
+                          : (visiblePages.isNotEmpty ? Image.memory(visiblePages.first, fit: fitMode == 'cover' ? BoxFit.cover : BoxFit.contain) : const SizedBox.shrink()),
                     ),
                   ),
                 ),
