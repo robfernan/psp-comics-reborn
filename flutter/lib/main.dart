@@ -50,7 +50,7 @@ class _AtmosphericWispsState extends State<AtmosphericWisps>
   }
 }
 
-/// CustomPainter that draws multiple intersecting wave layers to create
+/// CustomPainter that draws flowing flame ribbon strokes to create
 /// the organic red/orange plasma/smoke effect seen on PSP screens.
 class FlameRibbonPainter extends CustomPainter {
   final double animationValue;
@@ -59,75 +59,67 @@ class FlameRibbonPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Left side atmospheric wisp — strong red/orange glow
-    _drawSideWisp(canvas, size, true);
-
-    // Right side atmospheric wisp — strong red/orange glow
-    _drawSideWisp(canvas, size, false);
-  }
-
-  void _drawSideWisp(Canvas canvas, Size size, bool isLeft) {
-    final centerX = isLeft ? -50.0 : size.width + 50.0;
-    final centerY = size.height / 2;
-
-    // Animated phase offset for organic motion
-    final timeOffset = animationValue * math.pi * 2;
-
-    // Draw multiple overlapping wave layers for depth
-    _drawWaveLayer(canvas, size, isLeft, 5, 0.15, 0.04,
-        const Color(0xFFFF3300).withOpacity(0.4), timeOffset);
-    _drawWaveLayer(canvas, size, isLeft, 7, 0.2, 0.06,
-        const Color(0xFFCC1100).withOpacity(0.35), timeOffset * 1.3);
-    _drawWaveLayer(canvas, size, isLeft, 10, 0.1, 0.08,
-        const Color(0xFFFF6600).withOpacity(0.3), timeOffset * 0.7);
-
-    // Add a static radial glow core for intensity
-    final glowPaint = Paint()
+    // Soft atmospheric background glow so it's not totally dead black
+    final center = Offset(size.width / 2, size.height / 2);
+    final bgGlowPaint = Paint()
       ..shader = RadialGradient(
-        center: Alignment.center,
-        radius: 1.0,
         colors: [
-          const Color(0xFFFF2200).withOpacity(0.5),
-          const Color(0xFF880000).withOpacity(0.25),
+          Colors.red.withOpacity(0.15),
+          Colors.deepOrange.withOpacity(0.05),
           Colors.transparent,
         ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(centerX, centerY), radius: size.width * 0.4));
-    canvas.drawRect(Offset.zero & size, glowPaint);
+      ).createShader(Rect.fromCircle(center: center, radius: size.width * 0.7));
+    canvas.drawRect(Offset.zero & size, bgGlowPaint);
+
+    // Draw multiple flowing flame ribbons across the screen
+    _drawRibbon(canvas, size,
+        frequency: 2.0, amplitude: 60.0, verticalOffset: 0.3, speed: 1.0,
+        color: Colors.red);
+    _drawRibbon(canvas, size,
+        frequency: 3.0, amplitude: 80.0, verticalOffset: 0.5, speed: -1.5,
+        color: Colors.deepOrange);
+    _drawRibbon(canvas, size,
+        frequency: 1.5, amplitude: 50.0, verticalOffset: 0.7, speed: 0.8,
+        color: Colors.redAccent);
   }
 
-  void _drawWaveLayer(Canvas canvas, Size size, bool isLeft, int waveCount,
-      double amplitude, double speedMultiplier, Color color, double timeOffset) {
+  void _drawRibbon(Canvas canvas, Size size, {
+    required double frequency,
+    required double amplitude,
+    required double verticalOffset,
+    required double speed,
+    required Color color,
+  }) {
     final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+      ..color = color.withOpacity(0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 70.0
+      ..strokeCap = StrokeCap.round;
 
     final path = Path();
-    path.moveTo(0, size.height);
+    final timePhase = animationValue * math.pi * 2 * speed;
 
-    for (double i = 0; i <= size.width; i++) {
-      // Create organic multi-layered wave math
-      final double xNorm = i / size.width;
-      final double wave1 =
-          math.sin((xNorm * waveCount * math.pi) + timeOffset);
-      final double wave2 = math.sin(
-          (xNorm * waveCount * 1.5 * math.pi) + timeOffset * 2);
-      final double wave3 = math.cos(
-          (xNorm * waveCount * 0.5 * math.pi) - timeOffset * 1.5);
+    // Generate a smooth flowing sine/cosine curve across the width
+    bool isFirst = true;
+    for (double x = 0; x <= size.width; x += 5) {
+      double normalX = x / size.width;
+      // Organic compounding wave formula
+      double y = (size.height * verticalOffset) +
+          (math.sin(normalX * frequency * math.pi * 2 + timePhase) * amplitude) +
+          (math.cos(normalX * frequency * 1.5 * math.pi - timePhase) *
+              (amplitude * 0.5));
 
-      // Combine waves and apply vertical amplitude modulation
-      double y = size.height * 0.5 +
-          (size.height * amplitude * wave1 * wave2 * wave3);
-
-      path.lineTo(i, y);
+      if (isFirst) {
+        path.moveTo(x, y);
+        isFirst = false;
+      } else {
+        path.lineTo(x, y);
+      }
     }
 
-    path.lineTo(size.width, size.height);
-    path.close();
-
-    // Apply blur mask filter to soften edges into smoky ribbons
-    canvas.drawPath(path,
-        paint..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20));
+    // Apply heavy blur to give it that smoky, atmospheric "wisp" texture
+    paint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 35);
+    canvas.drawPath(path, paint);
   }
 
   @override
