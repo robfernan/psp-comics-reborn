@@ -1,1025 +1,1206 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ShaderBackground } from './components/ShaderBackground';
-import { ComicBook, extractUniversalCbz, extractUniversalCbzPages, titleFromPath } from './lib/cbz';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BookSession,
+  formatBytes,
+  importFiles,
+} from './lib/archive';
+import {
+  addComic,
+  deleteComic,
+  getAllComics,
+  getComicFile,
+  getStorageEstimate,
+  putComic,
+} from './lib/db';
+import { Action, KEY_HINTS, useInput } from './lib/input';
+import {
+  ComicRecord,
+  DEFAULT_SETTINGS,
+  LibraryFilter,
+  MODE_LABEL,
+  ReadingMode,
+  Settings,
+  effectiveMode,
+} from './lib/types';
+import './psp-theme.css';
 
-type Scene = 'MAIN_MENU' | 'CAROUSEL' | 'READER';
-type CollectionView = 'all' | 'unread' | 'bookmarked';
-type ReaderFitMode = 'contain' | 'cover';
-
-interface ReaderOptions {
-  fitMode: ReaderFitMode;
-  showPageCounter: boolean;
-  readingDirection: 'ltr' | 'rtl';
-}
-
-const COMIC_PATHS = [
-  "assets/1 Scott Pilgrim's Precious Little Life.cbz",
-  'assets/Absolute Batman 020 (2026) (Digital) (Pyrate-DCP).cbz',
-  'assets/Batman Beyond - Return of the Joker (2001 comic adaptation).cbz',
-  'assets/Official U.S. PlayStation Magazine Issue 01 (October 1997).cbz',
-];
+type Scene = 'MAIN_MENU' | 'CAROUSEL' | 'RECENT_LIST' | 'READER';
 
 const MENU_ITEMS = [
-  { label: 'Browse Collection', counter: '04' },
-  { label: 'Recently Added', counter: '04' },
-  { label: 'Unread', counter: '00' },
-  { label: 'Bookmarks', counter: '12' },
-  { label: 'Options', counter: '99' },
-];
+  { id: 'all', label: 'Browse Collection' },
+  { id: 'recent', label: 'Recently Added' },
+  { id: 'unread', label: 'Unread' },
+  { id: 'bookmarks', label: 'Bookmarks' },
+  { id: 'options', label: 'Options' },
+] as const;
 
-const STORAGE_KEYS = {
-  bookmarks: 'psp-digital-comics.bookmarks',
-  read: 'psp-digital-comics.read',
-  options: 'psp-digital-comics.options',
-  bookmarkPositions: 'psp-digital-comics.bookmarkPositions',
+const BTN = {
+  circle: '/psp-assets/textures/button_circle.png',
+  cross: '/psp-assets/textures/button_cross.png',
+  square: '/psp-assets/textures/button_square.png',
+  triangle: '/psp-assets/textures/button_triangle.png',
+  dpad: '/psp-assets/textures/button_dpad_u.png',
+  l: '/psp-assets/textures/button_l.png',
+  r: '/psp-assets/textures/button_r.png',
+  start: '/psp-assets/textures/button_start.png',
+  select: '/psp-assets/textures/button_select.png',
 };
-
-const DEFAULT_READER_OPTIONS: ReaderOptions = {
-  fitMode: 'contain',
-  showPageCounter: true,
-  readingDirection: 'ltr',
-};
-
-const thumbUrlForPath = (path: string): string => {
-  const fileName = path.split('/').pop() ?? path;
-  const slug = fileName
-    .replace(/\.cbz$/i, '')
-    .replace(/[^a-z0-9]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-
-  return `/thumbs/${slug}.jpg`;
-};
-
-const createInitialComics = (): ComicBook[] =>
-  COMIC_PATHS.map((path, index) => {
-    return {
-      id: `seed-${index}-${path}`,
-      title: titleFromPath(path),
-      coverUrl: thumbUrlForPath(path),
-      totalPages: 0,
-      path,
-    };
-  });
-
-function loadStringSet(storageKey: string): Set<string> {
-  if (typeof window === 'undefined') {
-    return new Set<string>();
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(storageKey);
-    if (!rawValue) {
-      return new Set<string>();
-    }
-
-    const parsed = JSON.parse(rawValue);
-    if (!Array.isArray(parsed)) {
-      return new Set<string>();
-    }
-
-    return new Set(parsed.filter((entry) => typeof entry === 'string'));
-  } catch {
-    return new Set<string>();
-  }
-}
-
-function loadReaderOptions(): ReaderOptions {
-  if (typeof window === 'undefined') {
-    return DEFAULT_READER_OPTIONS;
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(STORAGE_KEYS.options);
-    if (!rawValue) {
-      return DEFAULT_READER_OPTIONS;
-    }
-
-    const parsed = JSON.parse(rawValue) as Partial<ReaderOptions>;
-
-    return {
-      fitMode: parsed.fitMode === 'cover' ? 'cover' : 'contain',
-      showPageCounter: parsed.showPageCounter !== false,
-      readingDirection: parsed.readingDirection === 'rtl' ? 'rtl' : 'ltr',
-    };
-  } catch {
-    return DEFAULT_READER_OPTIONS;
-  }
-}
-
-function loadBookmarkPositions(): Record<string, number> {
-  if (typeof window === 'undefined') return {};
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.bookmarkPositions);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      const out: Record<string, number> = {};
-      for (const k of Object.keys(parsed)) {
-        const v = parsed[k];
-        out[k] = typeof v === 'number' && Number.isFinite(v) ? v : Number(parsed[k]) || 0;
-      }
-      return out;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 export function App() {
-  const [currentScene, setCurrentScene] = useState<Scene>('MAIN_MENU');
-  const [collectionView, setCollectionView] = useState<CollectionView>('all');
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [selectedMenuIndex, setSelectedMenuIndex] = useState(0);
-  const [activeComicIndex, setActiveComicIndex] = useState(0);
-  const [readerComicIndex, setReaderComicIndex] = useState(0);
-  const [readerPageIndex, setReaderPageIndex] = useState(0);
-  const [readerPages, setReaderPages] = useState<string[]>([]);
+  const [comics, setComics] = useState<ComicRecord[]>([]);
+  const [loadingLibrary, setLoadingLibrary] = useState(true);
+  const [scene, setScene] = useState<Scene>('MAIN_MENU');
+  const [filter, setFilter] = useState<LibraryFilter>('all');
+  const [menuIdx, setMenuIdx] = useState(0);
+  const [carouselIdx, setCarouselIdx] = useState(0);
+  const [recentIdx, setRecentIdx] = useState(0);
+
+  // Active comic being read
+  const [readerComicId, setReaderComicId] = useState<string | null>(null);
+  const [session, setSession] = useState<BookSession | null>(null);
+  const [pageIdx, setPageIdx] = useState(0);
+  const [pageUrls, setPageUrls] = useState<Record<number, string>>({});
   const [readerLoading, setReaderLoading] = useState(false);
-  const [readerZoom, setReaderZoom] = useState(1);
-  const [readerPan, setReaderPan] = useState({ x: 0, y: 0 });
-  const [readerViewportWidth, setReaderViewportWidth] = useState(() => (typeof window === 'undefined' ? 0 : window.innerWidth));
-  const [bookmarkedComicIds, setBookmarkedComicIds] = useState<Set<string>>(() => loadStringSet(STORAGE_KEYS.bookmarks));
-  const [bookmarkedPositions, setBookmarkedPositions] = useState<Record<string, number>>(() => loadBookmarkPositions());
-  const [readComicIds, setReadComicIds] = useState<Set<string>>(() => loadStringSet(STORAGE_KEYS.read));
-  const [readerOptions, setReaderOptions] = useState<ReaderOptions>(() => loadReaderOptions());
-  const [comicsList, setComicsList] = useState<ComicBook[]>(() => createInitialComics());
-  const [menuOpen, setMenuOpen] = useState(true);
-  const appRef = useRef<HTMLDivElement | null>(null);
-  const [appScale, setAppScale] = useState(1);
 
-  // removed tap-to-turn refs (explicit buttons now used)
-  const readerDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
-  const readerHeaderRef = useRef<HTMLElement | null>(null);
-  const readerFooterRef = useRef<HTMLElement | null>(null);
-  const readerStageRef = useRef<HTMLElement | null>(null);
-  const [readerStageHeight, setReaderStageHeight] = useState<number | null>(null);
-
-  const selectedComic = comicsList[activeComicIndex] ?? comicsList[0];
-  const readerComic = comicsList[readerComicIndex] ?? comicsList[0];
-  const currentReaderPage = readerPages[readerPageIndex] ?? readerPages[0] ?? '';
-  const readerSpreadMode = readerViewportWidth >= 1024 && readerPages.length > 1;
-  const readerSpreadStartIndex = readerSpreadMode ? readerPageIndex - (readerPageIndex % 2) : readerPageIndex;
-  const readerVisiblePages = readerSpreadMode
-    ? readerPages.slice(readerSpreadStartIndex, readerSpreadStartIndex + 2)
-    : readerPages.slice(readerPageIndex, readerPageIndex + 1);
-
-  const unreadCount = comicsList.filter((comic) => !readComicIds.has(comic.id)).length;
-  const bookmarkedCount = bookmarkedComicIds.size;
-
-  const visibleComicIndices = useMemo(() => {
-    return comicsList
-      .map((comic, index) => ({ comic, index }))
-      .filter(({ comic }) => {
-        if (collectionView === 'unread') {
-          return !readComicIds.has(comic.id);
-        }
-
-        if (collectionView === 'bookmarked') {
-          return bookmarkedComicIds.has(comic.id);
-        }
-
-        return true;
-      })
-      .map(({ index }) => index);
-  }, [bookmarkedComicIds, collectionView, comicsList, readComicIds]);
-
-  const activeCollectionComicIndex = visibleComicIndices[activeComicIndex] ?? visibleComicIndices[0] ?? 0;
-  const activeCollectionComic = comicsList[activeCollectionComicIndex] ?? comicsList[0];
-  const readerPageCounterLabel = readerSpreadMode
-    ? `${readerSpreadStartIndex + 1}${readerVisiblePages[1] ? `-${readerSpreadStartIndex + 2}` : ''} / ${readerPages.length}`
-    : readerPages.length
-      ? `${readerPageIndex + 1} / ${readerPages.length}`
-      : 'Loading pages...';
-  const readerZoomPercent = Math.round(readerZoom * 100);
-
-  const openCollectionView = (view: CollectionView) => {
-    setCollectionView(view);
-    setActiveComicIndex(0);
-    setCurrentScene('CAROUSEL');
-  };
-
-  const toggleBookmarkByComicId = (comicId: string) => {
-    // toggle bookmark but keep any saved page position so the reader can resume later
-    setBookmarkedComicIds((current) => {
-      const next = new Set(current);
-      if (next.has(comicId)) {
-        next.delete(comicId);
-        // intentionally keep bookmarkedPositions[comicId] so resume is preserved
-      } else {
-        next.add(comicId);
-        setBookmarkedPositions((p) => ({ ...p, [comicId]: p[comicId] ?? 0 }));
-      }
-      return next;
-    });
-  };
-
-  // bookmark and save a specific page (used from reader)
-  const toggleBookmarkWithPage = (comicId: string, pageIndex?: number) => {
-    setBookmarkedComicIds((current) => {
-      const next = new Set(current);
-      if (next.has(comicId)) {
-        next.delete(comicId);
-        // keep position saved
-      } else {
-        next.add(comicId);
-        setBookmarkedPositions((p) => ({ ...p, [comicId]: typeof pageIndex === 'number' ? pageIndex : p[comicId] ?? 0 }));
-      }
-      return next;
-    });
-  };
-
-  const advanceReaderPage = (delta: number) => {
-    setReaderPageIndex((current) => {
-      const direction = readerOptions.readingDirection === 'rtl' ? -1 : 1;
-      const step = readerSpreadMode ? 2 : 1;
-      const nextIndex = current + delta * direction * step;
-
-      return Math.max(0, Math.min(readerPages.length - 1, nextIndex));
-    });
-  };
-
-  const resetReaderView = () => {
-    setReaderZoom(1);
-    setReaderPan({ x: 0, y: 0 });
-  };
-
-  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    window.localStorage.setItem(STORAGE_KEYS.bookmarks, JSON.stringify(Array.from(bookmarkedComicIds)));
-  }, [bookmarkedComicIds]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // Settings & Modals
+  const [settings, setSettings] = useState<Settings>(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEYS.bookmarkPositions, JSON.stringify(bookmarkedPositions));
+      const s = localStorage.getItem('psp-comics.settings');
+      return s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : DEFAULT_SETTINGS;
     } catch {
-      // ignore
+      return DEFAULT_SETTINGS;
     }
-  }, [bookmarkedPositions]);
+  });
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [storageUsage, setStorageUsage] = useState<{ usage: number; quota: number } | null>(null);
 
+  // Import State
+  const [isDragging, setIsDragging] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number; name: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // References for zooming/panning
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const webtoonRef = useRef<HTMLDivElement | null>(null);
+
+  // Load library from IndexedDB on startup
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
+    getAllComics()
+      .then((records) => {
+        setComics(records);
+        setLoadingLibrary(false);
+      })
+      .catch((err) => {
+        console.error('Failed to load library:', err);
+        setLoadingLibrary(false);
+      });
+  }, []);
 
-    window.localStorage.setItem(STORAGE_KEYS.read, JSON.stringify(Array.from(readComicIds)));
-  }, [readComicIds]);
-
+  // Sync settings
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
+    try {
+      localStorage.setItem('psp-comics.settings', JSON.stringify(settings));
+    } catch {}
+  }, [settings]);
 
-    window.localStorage.setItem(STORAGE_KEYS.options, JSON.stringify(readerOptions));
-  }, [readerOptions]);
-
-  useEffect(() => {
-    const warmCache = async () => {
-      for (const path of COMIC_PATHS) {
-        void extractUniversalCbz(`/${path}`, thumbUrlForPath(path));
+  // Object URLs for cover thumbnails
+  const coverUrls = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of comics) {
+      if (c.cover) {
+        map[c.id] = URL.createObjectURL(c.cover);
       }
-    };
-
-    void warmCache();
-  }, []);
-
-  // Scale the whole app down to fit the viewport height if content overflows.
-  useEffect(() => {
-    const computeScale = () => {
-      const el = appRef.current;
-      if (!el) return setAppScale(1);
-
-      // measure the content height
-      const contentH = el.scrollHeight || el.offsetHeight || el.getBoundingClientRect().height;
-      const vwH = window.innerHeight;
-      const scale = contentH > vwH ? Math.max(0.6, Math.min(1, vwH / contentH)) : 1;
-      setAppScale(Number(scale.toFixed(3)));
-    };
-
-    computeScale();
-    window.addEventListener('resize', computeScale);
-    window.addEventListener('orientationchange', computeScale);
-    return () => {
-      window.removeEventListener('resize', computeScale);
-      window.removeEventListener('orientationchange', computeScale);
-    };
-  }, [currentScene, readerStageHeight]);
-
-  // Compute available height for reader stage so images fit on small screens
-  useEffect(() => {
-    const compute = () => {
-      const vh = window.innerHeight;
-      const headerH = readerHeaderRef.current ? readerHeaderRef.current.getBoundingClientRect().height : 0;
-      const footerH = readerFooterRef.current ? readerFooterRef.current.getBoundingClientRect().height : 0;
-      const gap = 24; // padding + margins
-      const available = Math.max(160, Math.floor(vh - headerH - footerH - gap));
-      setReaderStageHeight(available);
-    };
-
-    compute();
-    window.addEventListener('resize', compute);
-    window.addEventListener('orientationchange', compute);
-    return () => {
-      window.removeEventListener('resize', compute);
-      window.removeEventListener('orientationchange', compute);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
     }
+    return map;
+  }, [comics]);
 
-    const onResize = () => setReaderViewportWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    onResize();
+  // Filtered comics list
+  const filteredComics = useMemo(() => {
+    let list = [...comics];
+    if (filter === 'unread') {
+      list = list.filter((c) => !c.finished && c.progress === 0);
+    } else if (filter === 'reading') {
+      list = list.filter((c) => c.progress > 0 && !c.finished);
+    } else if (filter === 'bookmarked') {
+      list = list.filter((c) => c.bookmarked);
+    }
+    return list;
+  }, [comics, filter]);
 
-    return () => {
-      window.removeEventListener('resize', onResize);
-    };
+  const activeComic = useMemo(() => {
+    if (scene === 'RECENT_LIST') {
+      return comics[recentIdx] ?? comics[0] ?? null;
+    }
+    return filteredComics[carouselIdx] ?? comics[0] ?? null;
+  }, [comics, filteredComics, carouselIdx, recentIdx, scene]);
+
+  const readerComic = useMemo(
+    () => comics.find((c) => c.id === readerComicId) ?? null,
+    [comics, readerComicId],
+  );
+
+  const activeMode: ReadingMode = readerComic ? effectiveMode(readerComic, settings) : 'paged';
+
+  // Import handler
+  const handleImportFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    setImportProgress({ done: 0, total: fileArray.length, name: 'Starting import...' });
+
+    try {
+      const report = await importFiles(fileArray, (done, total, name) => {
+        setImportProgress({ done, total, name });
+      });
+
+      if (report.imported.length > 0) {
+        for (const item of report.imported) {
+          await addComic(item.record, item.file);
+        }
+        const updated = await getAllComics();
+        setComics(updated);
+        setCarouselIdx(0);
+        setRecentIdx(0);
+      }
+    } catch (err) {
+      console.error('Import error:', err);
+    } finally {
+      setImportProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   }, []);
 
+  // Open Reader
+  const openReader = useCallback(
+    async (comic: ComicRecord) => {
+      setReaderComicId(comic.id);
+      setPageIdx(comic.progress ?? 0);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setReaderLoading(true);
+      setScene('READER');
+
+      try {
+        const fileBlob = await getComicFile(comic.id);
+        if (!fileBlob) throw new Error('File not found in storage');
+
+        const newSession = await BookSession.open(fileBlob);
+        setSession((prev) => {
+          prev?.dispose();
+          return newSession;
+        });
+
+        // Prefetch initial pages
+        newSession.prefetch(comic.progress ?? 0, 4);
+
+        // Update lastReadAt
+        const updated: ComicRecord = {
+          ...comic,
+          lastReadAt: Date.now(),
+        };
+        await putComic(updated);
+        setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      } catch (err) {
+        console.error('Failed to open comic archive:', err);
+      } finally {
+        setReaderLoading(false);
+      }
+    },
+    [],
+  );
+
+  // Bookmark toggle
+  const toggleBookmark = useCallback(
+    async (comic: ComicRecord) => {
+      const updated = { ...comic, bookmarked: !comic.bookmarked };
+      await putComic(updated);
+      setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    },
+    [],
+  );
+
+  // Delete comic
+  const handleDeleteComic = useCallback(
+    async (id: string) => {
+      if (!confirm('Are you sure you want to remove this comic from your library?')) return;
+      await deleteComic(id);
+      setComics((prev) => prev.filter((c) => c.id !== id));
+      setCarouselIdx(0);
+      setRecentIdx(0);
+    },
+    [],
+  );
+
+  // Page advancement
+  const advancePage = useCallback(
+    (delta: number) => {
+      if (!session || !readerComic) return;
+      const total = session.length;
+      if (total <= 0) return;
+
+      const step =
+        activeMode === 'webtoon'
+          ? 1
+          : settings.spread && window.innerWidth >= 1024
+            ? 2
+            : 1;
+
+      const direction = activeMode === 'manga' ? -1 : 1;
+      const nextIdx = Math.max(0, Math.min(total - 1, pageIdx + delta * step * direction));
+
+      if (nextIdx !== pageIdx) {
+        setPageIdx(nextIdx);
+        session.prefetch(nextIdx, 3);
+        const finished = nextIdx >= total - 1;
+        const updated: ComicRecord = { ...readerComic, progress: nextIdx, finished };
+        putComic(updated).catch(() => {});
+        setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      }
+    },
+    [session, readerComic, activeMode, settings.spread, pageIdx],
+  );
+
+  // Load pages on demand for reader
   useEffect(() => {
-    if (currentScene !== 'READER') {
-      return;
-    }
+    if (!session || scene !== 'READER') return;
 
     let cancelled = false;
-    const comicPath = readerComic?.path;
+    const loadRequiredPages = async () => {
+      const needed =
+        activeMode === 'webtoon'
+          ? Array.from({ length: session.length }, (_, i) => i)
+          : settings.spread && window.innerWidth >= 1024
+            ? [pageIdx, pageIdx + 1].filter((p) => p < session.length)
+            : [pageIdx];
 
-    if (!comicPath) {
-      setReaderPages([]);
-      setReaderLoading(false);
-      return;
-    }
-
-    const loadReaderPages = async () => {
-      setReaderLoading(true);
-      const pages = await extractUniversalCbzPages(`/${comicPath}`);
-
-      if (cancelled) {
-        return;
+      const loaded: Record<number, string> = {};
+      for (const p of needed) {
+        try {
+          const url = await session.page(p);
+          if (!cancelled) loaded[p] = url;
+        } catch {}
       }
 
-      setReaderPages(pages);
-      // If we have a saved bookmarked position for this comic, resume there.
-      let startIndex = 0;
-      if (readerComic?.id && typeof bookmarkedPositions[readerComic.id] === 'number') {
-        startIndex = clamp(bookmarkedPositions[readerComic.id], 0, Math.max(0, pages.length - 1));
+      if (!cancelled) {
+        setPageUrls((prev) => ({ ...prev, ...loaded }));
       }
-      setReaderPageIndex(startIndex);
-      setReaderLoading(false);
-      resetReaderView();
-      setReadComicIds((current) => {
-        const next = new Set(current);
-        if (readerComic?.id) {
-          next.add(readerComic.id);
-        }
-        return next;
-      });
-      setComicsList((current) =>
-        current.map((comic, index) =>
-          index === readerComicIndex ? { ...comic, totalPages: pages.length } : comic,
-        ),
-      );
     };
 
-    void loadReaderPages();
-
+    void loadRequiredPages();
     return () => {
       cancelled = true;
     };
-  }, [currentScene, readerComic?.path, bookmarkedPositions, readerComicIndex]);
+  }, [session, pageIdx, scene, activeMode, settings.spread]);
 
-  useEffect(() => {
-    if (currentScene !== 'READER') {
-      resetReaderView();
-    }
-  }, [currentScene]);
-
-  // Ensure top of the app is visible when switching scenes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0 });
-    }
-  }, [currentScene]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (optionsOpen) {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          setOptionsOpen(false);
+  // Unified Input Handler (Keyboard + Controller)
+  useInput(
+    (action: Action) => {
+      if (controlsOpen) {
+        if (action === 'back' || action === 'confirm') {
+          setControlsOpen(false);
+          return;
         }
-
         return;
       }
 
-      if (currentScene === 'MAIN_MENU') {
-        if (event.key === 'ArrowUp') {
-          event.preventDefault();
-          setSelectedMenuIndex((current) => (current - 1 + MENU_ITEMS.length) % MENU_ITEMS.length);
+      if (optionsOpen) {
+        if (action === 'back' || action === 'start') {
+          setOptionsOpen(false);
+          return;
         }
-
-        if (event.key === 'ArrowDown') {
-          event.preventDefault();
-          setSelectedMenuIndex((current) => (current + 1) % MENU_ITEMS.length);
-        }
-
-        if (event.key === 'Enter' && selectedMenuIndex === 0) {
-          event.preventDefault();
-          openCollectionView('all');
-        }
-
-        if (event.key === 'Enter' && selectedMenuIndex === 1) {
-          event.preventDefault();
-          openCollectionView('all');
-        }
-
-        if (event.key === 'Enter' && selectedMenuIndex === 2) {
-          event.preventDefault();
-          openCollectionView('unread');
-        }
-
-        if (event.key === 'Enter' && selectedMenuIndex === 3) {
-          event.preventDefault();
-          openCollectionView('bookmarked');
-        }
-
-        if (event.key === 'Enter' && selectedMenuIndex === 4) {
-          event.preventDefault();
-          setOptionsOpen(true);
-        }
+        return;
       }
 
-      if (currentScene === 'CAROUSEL') {
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault();
-          setActiveComicIndex((current) => (current - 1 + visibleComicIndices.length) % visibleComicIndices.length);
-        }
-
-        if (event.key === 'ArrowRight') {
-          event.preventDefault();
-          setActiveComicIndex((current) => (current + 1) % visibleComicIndices.length);
-        }
-
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          setReaderComicIndex(activeCollectionComicIndex);
-          setReaderPageIndex(0);
-          setReaderPages([]);
-          setCurrentScene('READER');
-        }
-
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          setCurrentScene('MAIN_MENU');
-          setCollectionView('all');
-        }
-
-        if (event.key === 'b' || event.key === 'B') {
-          event.preventDefault();
-          const comicId = activeCollectionComic?.id;
-          if (comicId) {
-            toggleBookmarkByComicId(comicId);
+      switch (scene) {
+        case 'MAIN_MENU':
+          if (action === 'down') {
+            setMenuIdx((i) => (i + 1) % MENU_ITEMS.length);
+          } else if (action === 'up') {
+            setMenuIdx((i) => (i - 1 + MENU_ITEMS.length) % MENU_ITEMS.length);
+          } else if (action === 'confirm') {
+            const item = MENU_ITEMS[menuIdx];
+            if (item.id === 'options') {
+              setOptionsOpen(true);
+            } else if (item.id === 'recent') {
+              setRecentIdx(0);
+              setScene('RECENT_LIST');
+            } else {
+              setFilter(item.id as LibraryFilter);
+              setCarouselIdx(0);
+              setScene('CAROUSEL');
+            }
+          } else if (action === 'triangle') {
+            if (activeComic) openReader(activeComic);
+            else if (fileInputRef.current) fileInputRef.current.click();
+          } else if (action === 'square') {
+            setOptionsOpen(true);
+          } else if (action === 'left') {
+            setCarouselIdx((i) => (i - 1 + filteredComics.length) % Math.max(1, filteredComics.length));
+          } else if (action === 'right') {
+            setCarouselIdx((i) => (i + 1) % Math.max(1, filteredComics.length));
           }
-        }
-      }
+          break;
 
-      if (currentScene === 'READER') {
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault();
-          advanceReaderPage(-1);
-        }
-
-        if (event.key === 'ArrowRight') {
-          event.preventDefault();
-          advanceReaderPage(1);
-        }
-
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          setCurrentScene('CAROUSEL');
-        }
-
-        if (event.key === 'b' || event.key === 'B') {
-          event.preventDefault();
-          if (readerComic?.id) {
-            toggleBookmarkByComicId(readerComic.id);
+        case 'CAROUSEL':
+          if (action === 'left') {
+            setCarouselIdx((i) => Math.max(0, i - 1));
+          } else if (action === 'right') {
+            setCarouselIdx((i) => Math.min(filteredComics.length - 1, i + 1));
+          } else if (action === 'confirm') {
+            const c = filteredComics[carouselIdx];
+            if (c) openReader(c);
+          } else if (action === 'triangle') {
+            const c = filteredComics[carouselIdx];
+            if (c) toggleBookmark(c);
+          } else if (action === 'back' || action === 'start' || action === 'select') {
+            setScene('MAIN_MENU');
           }
-        }
+          break;
+
+        case 'RECENT_LIST':
+          if (action === 'down') {
+            setRecentIdx((i) => Math.min(comics.length - 1, i + 1));
+          } else if (action === 'up') {
+            setRecentIdx((i) => Math.max(0, i - 1));
+          } else if (action === 'confirm' || action === 'triangle') {
+            const c = comics[recentIdx];
+            if (c) openReader(c);
+          } else if (action === 'back' || action === 'start' || action === 'select') {
+            setScene('MAIN_MENU');
+          }
+          break;
+
+        case 'READER':
+          if (activeMode === 'webtoon') {
+            if (action === 'down' || action === 'r') {
+              webtoonRef.current?.scrollBy({ top: 400, behavior: 'smooth' });
+            } else if (action === 'up' || action === 'l') {
+              webtoonRef.current?.scrollBy({ top: -400, behavior: 'smooth' });
+            } else if (action === 'confirm' || action === 'right') {
+              advancePage(1);
+            } else if (action === 'triangle' || action === 'left') {
+              advancePage(-1);
+            } else if (action === 'back' || action === 'start') {
+              setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
+            } else if (action === 'square') {
+              if (readerComic) toggleBookmark(readerComic);
+            }
+          } else {
+            if (action === 'confirm' || action === 'right' || action === 'r') {
+              advancePage(1);
+            } else if (action === 'triangle' || action === 'left' || action === 'l') {
+              advancePage(-1);
+            } else if (action === 'square') {
+              if (readerComic) toggleBookmark(readerComic);
+            } else if (action === 'back' || action === 'start') {
+              setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
+            }
+          }
+          break;
       }
-    };
+    },
+    true,
+  );
 
-    window.addEventListener('keydown', onKeyDown, { passive: false });
+  // Storage estimation when opening options
+  useEffect(() => {
+    if (optionsOpen) {
+      getStorageEstimate().then(setStorageUsage);
+    }
+  }, [optionsOpen]);
 
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [activeCollectionComic?.id, activeCollectionComicIndex, advanceReaderPage, collectionView, currentScene, optionsOpen, readerPages.length, selectedMenuIndex, visibleComicIndices.length]);
+  // Clean-up session when closing reader
+  const closeReader = useCallback(() => {
+    session?.dispose();
+    setSession(null);
+    setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
+  }, [session, filter]);
 
-  const totalComics = comicsList.length.toString().padStart(2, '0');
-  const optionsCount = '03';
-
+  // 3D Carousel Cards Calculation
   const carouselCards = useMemo(() => {
-    const sourceIndices = visibleComicIndices.length ? visibleComicIndices : comicsList.map((_, index) => index);
-
-    return sourceIndices.map((comicIndex, index) => {
-      const comic = comicsList[comicIndex];
-      const distance = index - activeComicIndex;
-      const absDistance = Math.abs(distance);
+    return filteredComics.map((comic, index) => {
+      const distance = index - carouselIdx;
+      const absDist = Math.abs(distance);
       const isActive = distance === 0;
-      const isNeighbor = absDistance === 1;
-      const hiddenOnMobile = absDistance > 1;
+      const isNeighbor = absDist === 1;
+      const hiddenOnMobile = absDist > 1;
 
-      const scale = isActive ? 1.1 : isNeighbor ? 0.9 : 0.75;
-      const opacity = isActive ? 1 : isNeighbor ? 0.6 : 0.3;
-      const blur = isNeighbor ? 'blur-[1px]' : absDistance > 1 ? 'blur-[2px]' : 'blur-0';
-      const zIndex = isActive ? 30 : isNeighbor ? 20 : 10 - absDistance;
+      const scale = isActive ? 1.08 : isNeighbor ? 0.88 : 0.72;
+      const opacity = isActive ? 1 : isNeighbor ? 0.65 : 0.35;
+      const zIndex = isActive ? 30 : 20 - absDist;
 
       return {
         comic,
         index,
+        isActive,
         className: [
-          'absolute left-1/2 top-1/2 w-[200px] sm:w-[240px] md:w-[280px] lg:w-[320px] transition-all duration-300 ease-in-out',
-          blur,
+          'absolute left-1/2 top-1/2 w-[210px] sm:w-[250px] md:w-[290px] transition-all duration-300 ease-out',
           hiddenOnMobile ? 'hidden md:block' : '',
         ]
           .filter(Boolean)
           .join(' '),
         style: {
-          transform: `translate(-50%, -50%) translateX(${distance * 13.5}rem) scale(${scale})`,
+          transform: `translate(-50%, -50%) translateX(${distance * 14}rem) scale(${scale})`,
           opacity,
           zIndex,
         } as React.CSSProperties,
-        isActive,
       };
     });
-  }, [activeComicIndex, comicsList, visibleComicIndices]);
+  }, [filteredComics, carouselIdx]);
 
   return (
-    <div className="relative min-h-screen w-full bg-transparent text-white">
-      {/* Background layers: black base + animated ribbon shader */}
-      <div className="fixed inset-0 z-0 bg-[#0a0a0a] pointer-events-none" />
-      <ShaderBackground />
+    <div
+      className="relative min-h-screen w-full bg-[#020202] text-white overflow-hidden select-none font-sans"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files) handleImportFiles(e.dataTransfer.files);
+      }}
+    >
+      {/* ========================================================
+          AUTHENTIC PSP WAVE RIBBON BACKGROUND (psp-theme.css)
+          ======================================================== */}
+      <div className="fixed inset-0 z-0 bg-[#020202] pointer-events-none" />
+      <div className="psp-wave-ribbon" aria-hidden />
+      <div className="psp-wave-ribbon psp-wave-ribbon-secondary" aria-hidden />
 
-      <div
-        ref={(el) => { appRef.current = el; }}
-        className="relative z-20 min-h-screen w-full flex flex-col bg-transparent pointer-events-auto overflow-hidden"
-        style={{ transform: `scale(${appScale})`, transformOrigin: 'top center' }}
-      >
-        {currentScene === 'MAIN_MENU' ? (
-          <main className="flex h-full w-full flex-col bg-transparent md:flex-row">
-            <section
-              className="flex w-full flex-1 flex-col justify-start border-b border-white/10 bg-transparent px-3 pt-8 md:border-b-0 md:border-r md:px-8 md:pt-24 min-h-0 overflow-hidden md:overflow-auto"
-              style={{ maxHeight: 'calc(100vh - 80px)' }}
-            >
-              <div>
-                <div className="inline-flex overflow-hidden rounded-md bg-transparent">
-                  <div className="bg-white px-4 py-2 text-sm font-black tracking-[0.35em] text-black md:text-base">
-                    DIGITAL
-                  </div>
-                  <div className="bg-[#d83a1b] px-4 py-2 text-sm font-black italic tracking-[0.35em] text-white md:text-base">
-                    COMICS
-                  </div>
+      {/* Drag & Drop Visual Overlay */}
+      {isDragging && (
+        <div className="psp-drag-overlay">
+          <img src="/psp-assets/textures/logo224.png" alt="" className="psp-logo" />
+          <p>Drop Comic Archives (.CBZ, .ZIP) or Image Folders Here</p>
+        </div>
+      )}
+
+      {/* Busy Loading Overlay */}
+      {(importProgress || readerLoading || loadingLibrary) && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm">
+          <div className="psp-spinner">
+            <img src="/psp-assets/textures/busy.png" alt="Loading" />
+          </div>
+          {importProgress && (
+            <p className="mt-4 text-xs font-semibold tracking-widest text-white/80">
+              Importing {importProgress.done} / {importProgress.total}: {importProgress.name}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Hidden File Input for Imports */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".cbz,.zip,image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => handleImportFiles(e.target.files)}
+      />
+
+      {/* ========================================================
+          MAIN MENU SCREEN: AUTHENTIC HOMAGE
+          ======================================================== */}
+      {scene === 'MAIN_MENU' && (
+        <main className="relative z-20 flex min-h-screen flex-col justify-between p-4 md:p-8">
+          <div className="flex flex-1 flex-col md:flex-row items-center justify-center gap-8 md:gap-20 max-w-6xl mx-auto w-full">
+            {/* Left: PSP Logo & Authentic 9-Slice Menu Rows */}
+            <div className="flex flex-col items-center md:items-start w-full max-w-md">
+              <img
+                src="/psp-assets/textures/logo224.png"
+                alt="PSP Digital Comics"
+                className="psp-logo mb-6 md:mb-8"
+              />
+
+              <nav className="psp-menu-list" aria-label="PSP Main Menu">
+                {MENU_ITEMS.map((item, index) => {
+                  const isActive = index === menuIdx;
+                  const counter =
+                    item.id === 'all'
+                      ? comics.length.toString().padStart(2, '0')
+                      : item.id === 'recent'
+                        ? comics.length.toString().padStart(2, '0')
+                        : item.id === 'unread'
+                          ? comics.filter((c) => !c.finished && c.progress === 0).length.toString().padStart(2, '0')
+                          : item.id === 'bookmarks'
+                            ? comics.filter((c) => c.bookmarked).length.toString().padStart(2, '0')
+                            : '⚙';
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`psp-menu-row${isActive ? ' active' : ''}`}
+                      onMouseEnter={() => setMenuIdx(index)}
+                      onClick={() => {
+                        setMenuIdx(index);
+                        if (item.id === 'options') setOptionsOpen(true);
+                        else if (item.id === 'recent') {
+                          setRecentIdx(0);
+                          setScene('RECENT_LIST');
+                        } else {
+                          setFilter(item.id as LibraryFilter);
+                          setCarouselIdx(0);
+                          setScene('CAROUSEL');
+                        }
+                      }}
+                    >
+                      <span className="psp-menu-label">{item.label}</span>
+                      <span className="psp-badge">{counter}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <button
+                type="button"
+                className="mt-6 text-xs text-white/70 hover:text-white underline cursor-pointer tracking-wider"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                + Import Comics (.CBZ, .ZIP or Image Folders)
+              </button>
+            </div>
+
+            {/* Right: Active Comic Preview Card or Empty State */}
+            <div className="flex flex-col items-center justify-center w-full max-w-xs md:max-w-sm">
+              {comics.length === 0 ? (
+                <div
+                  className="psp-empty-card w-[220px] md:w-[260px] aspect-[2/3] cursor-pointer hover:border-white/40 transition"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <img
+                    src="/psp-assets/textures/cover_locked.png"
+                    alt="No Comics"
+                    className="w-20 h-20 opacity-50 mb-4"
+                  />
+                  <p className="text-sm font-semibold mb-1">Library Empty</p>
+                  <p className="text-[11px] text-white/50 mb-4">No comics in memory</p>
+                  <span className="psp-read-btn text-[10px] px-3 py-1.5">
+                    Click or Drop to Add
+                  </span>
                 </div>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <div className="relative aspect-[2/3] w-[210px] md:w-[250px] overflow-hidden rounded-[18px] border-2 border-white/20 bg-black/70 shadow-[0_20px_50px_rgba(0,0,0,0.85)]">
+                    {activeComic && coverUrls[activeComic.id] ? (
+                      <img
+                        src={coverUrls[activeComic.id]}
+                        alt={activeComic.title}
+                        className="aspect-[2/3] w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex aspect-[2/3] w-full items-center justify-center bg-gradient-to-b from-[#2a0806] to-black">
+                        <img
+                          src="/psp-assets/textures/bkmk_noarchive.png"
+                          alt=""
+                          className="w-16 h-16 opacity-40"
+                        />
+                      </div>
+                    )}
 
-                <div className="mt-4 bg-transparent">
-                  <div className="flex items-center justify-between md:hidden">
-                    <div className="text-sm font-semibold tracking-wide">Menu</div>
+                    {activeComic?.bookmarked && (
+                      <span className="absolute right-3 top-3 h-3 w-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]" />
+                    )}
+
+                    {activeComic && activeComic.progress === 0 && !activeComic.finished && (
+                      <span className="absolute left-3 top-3 h-3 w-3 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.9)]" />
+                    )}
+
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3 pt-6">
+                      <p className="text-xs font-semibold text-white/95 truncate">
+                        {activeComic?.title}
+                      </p>
+                      <p className="text-[10px] text-white/60 tracking-wider">
+                        {activeComic?.pageCount ? `${activeComic.pageCount} pages` : 'CBZ Archive'}
+                        {activeComic && activeComic.progress > 0
+                          ? ` • Page ${activeComic.progress + 1}`
+                          : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  {activeComic && (
                     <button
                       type="button"
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-sm"
-                      onClick={() => setMenuOpen((v) => !v)}
+                      className="psp-read-btn mt-5 px-6 py-2.5 text-xs font-bold uppercase tracking-widest"
+                      onClick={() => openReader(activeComic)}
                     >
-                      {menuOpen ? 'Close' : 'Open'}
+                      <span className="inline-flex items-center gap-1.5">
+                        <img src={BTN.triangle} alt="" className="w-3.5 h-3.5" />
+                        {activeComic.progress > 0 ? 'Resume' : 'Read'}
+                      </span>
                     </button>
-                  </div>
-                  <div className={['mt-3', menuOpen ? 'block' : 'hidden', 'space-y-3'].join(' ')}>
-                  {MENU_ITEMS.map((item, index) => {
-                    const isActive = index === selectedMenuIndex;
-                    const counter =
-                      index === 0 || index === 1
-                        ? totalComics
-                        : index === 2
-                          ? unreadCount.toString().padStart(2, '0')
-                          : index === 3
-                            ? bookmarkedCount.toString().padStart(2, '0')
-                            : optionsCount;
-
-                    return (
-                      <div
-                        key={item.label}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => {
-                          setSelectedMenuIndex(index);
-                          // mirror Enter key behavior
-                          if (index === 0) openCollectionView('all');
-                          else if (index === 1) openCollectionView('all');
-                          else if (index === 2) openCollectionView('unread');
-                          else if (index === 3) openCollectionView('bookmarked');
-                          else if (index === 4) setOptionsOpen(true);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            (e.currentTarget as HTMLElement).click();
-                          }
-                        }}
-                        className={[
-                          'flex items-center justify-between rounded-full border px-4 py-3 transition-all duration-200',
-                          isActive
-                            ? 'border-transparent bg-gradient-to-r from-red-600 to-amber-500 font-bold text-white shadow-[0_0_25px_rgba(220,38,38,0.5)]'
-                            : 'border-white/25 bg-white/5 text-white/85',
-                        ].join(' ')}
-                      >
-                        <span className="text-sm font-semibold tracking-wide md:text-base">{item.label}</span>
-                        <span
-                          className={[
-                            'ml-4 rounded-full border px-3 py-1 text-xs font-bold tracking-[0.25em]',
-                            isActive
-                              ? 'border-white/50 bg-white/15 text-white'
-                              : 'border-white/30 bg-black/20 text-white/85',
-                          ].join(' ')}
-                        >
-                          {counter}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="flex w-full flex-1 items-start justify-center bg-transparent px-4 pt-8 md:px-10 md:pt-24">
-              <div className="flex w-full max-w-sm flex-col items-center justify-start text-center">
-                <div className="relative aspect-[2/3] w-[220px] overflow-hidden rounded-[22px] border border-white/15 bg-transparent p-0 shadow-[0_20px_60px_rgba(0,0,0,0.42)] md:w-[260px]">
-                  {selectedComic?.coverUrl ? (
-                    <img
-                      src={selectedComic.coverUrl}
-                      alt={selectedComic?.title ?? 'Selected comic cover'}
-                      className="aspect-[2/3] w-full rounded-[18px] object-cover shadow-2xl border border-white/10"
-                    />
-                  ) : (
-                    <div className="flex aspect-[2/3] w-full items-center justify-center rounded-[18px] bg-gradient-to-b from-[#430807] via-[#250404] to-black">
-                      <div className="h-14 w-14 animate-pulse rounded-full bg-[#f06a23]/20 shadow-[0_0_30px_rgba(230,92,0,0.55)]" />
-                    </div>
                   )}
                 </div>
+              )}
+            </div>
+          </div>
 
-                <button
-                  type="button"
-                  className="mt-6 rounded-full border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold tracking-[0.2em] text-[#f5e7d8] transition hover:bg-white/10"
-                  onClick={() => {
-                    setReaderComicIndex(activeComicIndex);
-                    setReaderPageIndex(0);
-                    setReaderPages([]);
-                    setCurrentScene('READER');
-                  }}
-                >
-                  (Triangle) Resume
-                </button>
+          {/* Button Hints Bar */}
+          <footer className="psp-btn-hints">
+            <span className="psp-btn-hint">
+              <img src={BTN.circle} alt="" /> Select
+            </span>
+            <span className="psp-btn-hint">
+              <img src={BTN.triangle} alt="" /> {comics.length > 0 ? 'Resume' : 'Import'}
+            </span>
+            <span className="psp-btn-hint">
+              <img src={BTN.square} alt="" /> Options
+            </span>
+            <button
+              type="button"
+              className="psp-btn-hint text-white/50 hover:text-white cursor-pointer ml-auto"
+              onClick={() => setControlsOpen(true)}
+            >
+              Controls Help
+            </button>
+          </footer>
+        </main>
+      )}
+
+      {/* ========================================================
+          CAROUSEL VIEW: AUTHENTIC 3D COVER FLOW
+          ======================================================== */}
+      {scene === 'CAROUSEL' && (
+        <main className="relative z-20 flex min-h-screen flex-col justify-between">
+          <div className="psp-screen-bar">
+            <button type="button" onClick={() => setScene('MAIN_MENU')}>
+              Home
+            </button>
+            <span>
+              {filter === 'all'
+                ? `All Comics (${filteredComics.length})`
+                : filter === 'unread'
+                  ? `Unread (${filteredComics.length})`
+                  : `Bookmarks (${filteredComics.length})`}
+            </span>
+            <label>
+              Import
+              <input
+                type="file"
+                accept=".cbz,.zip,image/*"
+                multiple
+                onChange={(e) => handleImportFiles(e.target.files)}
+              />
+            </label>
+          </div>
+
+          <section className="relative flex flex-1 items-start justify-center px-4 pt-4 md:pt-10 overflow-visible">
+            {filteredComics.length === 0 ? (
+              <div
+                className="psp-empty-card my-auto w-full max-w-md cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <img
+                  src="/psp-assets/textures/cover_locked.png"
+                  alt=""
+                  className="w-16 h-16 opacity-40 mb-3"
+                />
+                <p className="text-sm font-semibold mb-1">No Comics in this View</p>
+                <p className="text-xs text-white/60 mb-4">Click to import or switch views</p>
+                <span className="psp-read-btn text-xs px-4 py-2">Import .CBZ</span>
               </div>
-            </section>
-          </main>
-        ) : null}
-
-        {currentScene === 'CAROUSEL' ? (
-          <main className="flex h-full w-full flex-col bg-transparent">
-            <header className="border-b border-white/15 bg-transparent px-4 py-4 md:px-8">
-              <div className="text-center text-sm font-semibold tracking-[0.35em] text-white/90 md:text-base">
-                All Comics
-              </div>
-              <div className="mx-auto mt-3 h-px w-full max-w-4xl bg-gradient-to-r from-transparent via-white/60 to-transparent" />
-            </header>
-
-            <section className="relative flex flex-1 items-start justify-center bg-transparent px-4 pt-6 md:px-8 md:pt-8">
-              <div className="relative h-[34rem] w-full max-w-6xl -translate-y-8 overflow-visible md:h-[38rem] md:-translate-y-10">
+            ) : (
+              <div className="relative h-[32rem] w-full max-w-6xl -translate-y-6 overflow-visible md:h-[36rem]">
                 {carouselCards.map(({ comic, index, className, style, isActive }) => (
                   <article
                     key={comic.id}
                     className={[className, 'cursor-pointer'].join(' ')}
                     style={style}
-                    aria-current={isActive}
                     role="button"
                     tabIndex={0}
                     onClick={() => {
-                      const realIndex = comicsList.findIndex((c) => c.id === comic.id);
-                      if (realIndex === -1) return;
-                      setActiveComicIndex(index);
-                      setReaderComicIndex(realIndex);
-                      setReaderPages([]);
-                      setCurrentScene('READER');
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        (e.currentTarget as HTMLElement).click();
-                      }
+                      if (isActive) openReader(comic);
+                      else setCarouselIdx(index);
                     }}
                   >
                     <div
                       className={[
-                        'relative aspect-[2/3] overflow-hidden rounded-[24px] border bg-transparent shadow-psp',
+                        'relative aspect-[2/3] overflow-hidden rounded-[20px] border bg-black/70 shadow-2xl transition-all duration-300',
                         isActive
-                          ? 'border-[#ff7a2b] ring-2 ring-[#ff5f1d]/70 ring-offset-2 ring-offset-black shadow-[0_0_40px_rgba(255,122,43,0.4)]'
-                          : 'border-white/18',
+                          ? 'border-[#ff5f1d] ring-2 ring-[#ff5f1d]/80 ring-offset-2 ring-offset-black shadow-[0_0_40px_rgba(255,100,30,0.6)]'
+                          : 'border-white/20',
                       ].join(' ')}
                     >
-                      {!readComicIds.has(comic.id) ? (
-                        <span className="absolute left-3 top-3 z-20 h-3 w-3 rounded-full bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.85)]" />
-                      ) : null}
-
-                      {bookmarkedComicIds.has(comic.id) ? (
-                        <span className="absolute right-3 top-3 z-20 h-3 w-3 rounded-full bg-amber-300 shadow-[0_0_12px_rgba(253,224,71,0.9)]" />
-                      ) : null}
-
-                      {comic.coverUrl ? (
+                      {coverUrls[comic.id] ? (
                         <img
-                          src={comic.coverUrl}
+                          src={coverUrls[comic.id]}
                           alt={comic.title}
                           className="aspect-[2/3] w-full object-cover"
                         />
                       ) : (
-                        <div className="flex aspect-[2/3] w-full items-center justify-center bg-gradient-to-b from-[#430807] via-[#250404] to-black">
-                          <div className="h-14 w-14 animate-pulse rounded-full bg-[#f06a23]/20 shadow-[0_0_30px_rgba(230,92,0,0.55)]" />
+                        <div className="flex aspect-[2/3] w-full items-center justify-center bg-gradient-to-b from-[#2a0806] to-black">
+                          <div className="h-10 w-10 animate-pulse rounded-full bg-[#f06a23]/30" />
                         </div>
                       )}
 
-                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-white/8" />
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent" />
-                    </div>
+                      {comic.bookmarked && (
+                        <span className="absolute right-3 top-3 z-20 h-3 w-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]" />
+                      )}
 
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 pt-6">
+                        <span className="inline-block text-[9px] font-bold uppercase tracking-wider text-orange-400 mb-1">
+                          {effectiveMode(comic, settings) === 'webtoon'
+                            ? 'Manhwa'
+                            : effectiveMode(comic, settings) === 'manga'
+                              ? 'Manga'
+                              : 'Comic'}
+                        </span>
+                        <p className="text-xs font-semibold text-white/95 truncate">
+                          {comic.title}
+                        </p>
+                        <p className="text-[10px] text-white/60">
+                          {comic.pageCount} pages • {formatBytes(comic.size)}
+                        </p>
+                      </div>
+                    </div>
                   </article>
                 ))}
               </div>
-            </section>
+            )}
+          </section>
 
-            <footer className="border-t border-white/10 bg-transparent px-4 py-5 text-center md:px-8">
-              <div className="mx-auto max-w-4xl text-sm font-semibold tracking-[0.18em] text-white/90 md:text-base">
-                {selectedComic?.title ?? 'No comic selected'}
-              </div>
-              <div className="mt-2 text-xs tracking-[0.3em] text-white/45">
-                LEFT / RIGHT to browse, ESC to return
-              </div>
-            </footer>
-          </main>
-        ) : null}
+          <footer className="psp-btn-hints">
+            <span className="psp-btn-hint">
+              <img src={BTN.circle} alt="" /> Open
+            </span>
+            <span className="psp-btn-hint">
+              <img src={BTN.triangle} alt="" /> Bookmark
+            </span>
+            <span className="psp-btn-hint">
+              <img src={BTN.cross} alt="" /> Back
+            </span>
+            <span className="psp-btn-hint text-white/50">
+              {activeComic?.title ?? 'No Comic Selected'}
+            </span>
+          </footer>
+        </main>
+      )}
 
-        {currentScene === 'READER' ? (
-          <main className="relative flex h-full w-full flex-col bg-transparent px-3 py-4 md:px-6 md:py-5">
-            <header
-              className="border-b border-white/10 bg-transparent px-2 pb-3 text-center md:px-6"
-              onPointerDown={(event) => event.stopPropagation()}
-              onPointerUp={(event) => event.stopPropagation()}
-              ref={(el) => { readerHeaderRef.current = el; }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[10px] font-bold uppercase tracking-[0.45em] text-white/55 md:text-xs">Reader Mode</div>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] font-semibold tracking-[0.25em] text-white/80 transition hover:bg-white/10"
-                  onClick={() => readerComic?.id && toggleBookmarkWithPage(readerComic.id, readerPageIndex)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  {readerComic?.id && bookmarkedComicIds.has(readerComic.id) ? 'Bookmarked' : 'Bookmark'}
-                </button>
-              </div>
-              <div className="mt-2 text-sm font-semibold tracking-[0.18em] text-white/90 md:text-base">
-                {readerComic?.title ?? 'Untitled Comic'}
-              </div>
-              {readerOptions.showPageCounter ? (
-                <div className="mt-2 text-[10px] tracking-[0.28em] text-white/40 md:text-xs">
-                  {readerPageCounterLabel}
-                </div>
-              ) : null}
-            </header>
+      {/* ========================================================
+          RECENT LIST VIEW (From DigitalComicsPSP)
+          ======================================================== */}
+      {scene === 'RECENT_LIST' && (
+        <main className="relative z-20 flex min-h-screen flex-col justify-between">
+          <div className="psp-screen-bar">
+            <button type="button" onClick={() => setScene('MAIN_MENU')}>
+              Home
+            </button>
+            <span>Recently Added ({comics.length})</span>
+            <label>
+              Import
+              <input
+                type="file"
+                accept=".cbz,.zip,image/*"
+                multiple
+                onChange={(e) => handleImportFiles(e.target.files)}
+              />
+            </label>
+          </div>
 
-            <section className="relative flex flex-1 items-center justify-center bg-transparent py-3 md:py-4">
-
+          <div className="flex-1 overflow-y-auto px-4 max-w-4xl mx-auto w-full py-4">
+            {comics.length === 0 ? (
               <div
-                className="relative flex w-full max-w-[min(96vw,1200px)] items-center justify-center overflow-hidden rounded-[22px] border border-white/10 bg-black/25 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
-                ref={(el) => { readerStageRef.current = el; }}
-                style={{ height: readerStageHeight ? `${readerStageHeight}px` : 'calc(100vh - 120px)' }}
-                onWheel={(event) => {
-                  event.preventDefault();
-
-                  const zoomDelta = event.deltaY < 0 ? 0.12 : -0.12;
-                  setReaderZoom((current) => {
-                    const nextZoom = clamp(current + zoomDelta, 1, 3);
-                    if (nextZoom === 1) {
-                      setReaderPan({ x: 0, y: 0 });
-                    }
-                    return nextZoom;
-                  });
-                }}
-                onDoubleClick={resetReaderView}
-                onPointerDown={(event) => {
-                  // Only start panning if we're zoomed; taps won't change pages.
-                  if (readerZoom <= 1) {
-                    return;
-                  }
-
-                  event.stopPropagation();
-                  readerDragRef.current = {
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    originX: readerPan.x,
-                    originY: readerPan.y,
-                  };
-                  (event.currentTarget as Element).setPointerCapture(event.pointerId);
-                }}
-                onPointerMove={(event) => {
-                  const drag = readerDragRef.current;
-
-                  if (!drag) {
-                    return;
-                  }
-
-                  event.stopPropagation();
-                  setReaderPan({
-                    x: drag.originX + (event.clientX - drag.startX),
-                    y: drag.originY + (event.clientY - drag.startY),
-                  });
-                }}
-                onPointerUp={(event) => {
-                  if (readerDragRef.current) {
-                    event.stopPropagation();
-                    try { (event.currentTarget as Element).releasePointerCapture(event.pointerId); } catch {}
-                  }
-
-                  readerDragRef.current = null;
-                }}
-                onPointerCancel={() => {
-                  readerDragRef.current = null;
-                }}
+                className="psp-empty-card my-12 cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
               >
-                {readerLoading ? (
-                  <div className="flex h-full w-full items-center justify-center bg-transparent">
-                    <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white/80" />
-                  </div>
-                  ) : readerVisiblePages.length ? (
-                  <div
-                    className="flex h-full w-full items-center justify-center"
-                    style={{
-                      transform: `translate3d(${readerPan.x}px, ${readerPan.y}px, 0) scale(${readerZoom})`,
-                      transformOrigin: 'center center',
-                    }}
-                  >
-                    <div className={readerSpreadMode ? 'grid h-full w-full grid-cols-2 gap-4' : 'flex h-full w-full items-center justify-center'}>
-                      {readerVisiblePages.map((pageUrl, pageOffset) => {
-                        const pageNumber = readerSpreadMode ? readerSpreadStartIndex + pageOffset + 1 : readerPageIndex + 1;
-
-                        return (
-                          <img
-                            key={`${pageUrl}-${pageNumber}`}
-                            src={pageUrl}
-                            alt={`${readerComic?.title ?? 'Comic'} page ${pageNumber}`}
-                            className="max-h-full max-w-full min-w-0 object-contain select-none"
-                            draggable={false}
-                            style={{ zIndex: 0 }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-white/60">
-                    No pages available.
-                  </div>
-                )}
-
-                <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70 md:text-[10px]">
-                  {readerSpreadMode ? 'Spread' : 'Single'} {readerZoomPercent}%
-                </div>
+                <p className="text-sm font-semibold mb-1">No Comics Added Yet</p>
+                <p className="text-xs text-white/60 mb-4">Drop CBZ files or click to add</p>
+                <span className="psp-read-btn text-xs px-4 py-2">Import</span>
               </div>
-            </section>
+            ) : (
+              <ul className="psp-recent-list">
+                {comics.map((comic, i) => {
+                  const isActive = i === recentIdx;
+                  return (
+                    <li
+                      key={comic.id}
+                      className={`psp-recent-row${isActive ? ' active' : ''}`}
+                      onMouseEnter={() => setRecentIdx(i)}
+                      onClick={() => openReader(comic)}
+                    >
+                      <span className="psp-recent-cover">
+                        {coverUrls[comic.id] && <img src={coverUrls[comic.id]} alt="" />}
+                      </span>
+                      <span className="psp-recent-info">
+                        <strong>{comic.title}</strong>
+                        <small>
+                          {comic.pageCount} pages • {MODE_LABEL[effectiveMode(comic, settings)]}
+                          {comic.bookmarked ? ' • Bookmarked' : ''}
+                        </small>
+                      </span>
+                      <button
+                        type="button"
+                        className="psp-read-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openReader(comic);
+                        }}
+                      >
+                        READ
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-            <footer
-              className="border-t border-white/10 bg-transparent px-3 pt-3 text-center md:px-6"
-              onPointerDown={(event) => event.stopPropagation()}
-              onPointerUp={(event) => event.stopPropagation()}
-              ref={(el) => { readerFooterRef.current = el; }}
-            >
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-semibold tracking-[0.24em] text-white/80 transition hover:bg-white/10"
-                  onClick={() => advanceReaderPage(-1)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  Prev
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-semibold tracking-[0.24em] text-white/80 transition hover:bg-white/10"
-                  onClick={() => {
-                    setReaderZoom((current) => {
-                      const nextZoom = clamp(current - 0.15, 1, 3);
-                      if (nextZoom === 1) {
-                        setReaderPan({ x: 0, y: 0 });
-                      }
-                      return nextZoom;
-                    });
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  -
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-semibold tracking-[0.24em] text-white/80 transition hover:bg-white/10"
-                  onClick={resetReaderView}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  Reset Zoom
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-semibold tracking-[0.24em] text-white/80 transition hover:bg-white/10"
-                  onClick={() => {
-                    setReaderZoom((current) => clamp(current + 0.15, 1, 3));
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-semibold tracking-[0.24em] text-white/80 transition hover:bg-white/10"
-                  onClick={() => advanceReaderPage(1)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onPointerUp={(event) => event.stopPropagation()}
-                >
-                  Next
-                </button>
-              </div>
-              <div className="mt-3 text-[10px] tracking-[0.28em] text-white/45 md:text-xs">
-                DRAG TO PAN WHEN ZOOMED, USE PREV/NEXT BUTTONS OR ARROW KEYS, ESC TO RETURN
-              </div>
-            </footer>
-          </main>
-        ) : null}
+          <footer className="psp-btn-hints">
+            <span className="psp-btn-hint">
+              <img src={BTN.circle} alt="" /> Read
+            </span>
+            <span className="psp-btn-hint">
+              <img src={BTN.cross} alt="" /> Back to Menu
+            </span>
+          </footer>
+        </main>
+      )}
 
-      {optionsOpen ? (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[26px] border border-white/15 bg-black/80 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.65)]">
-            <div className="text-center text-[10px] font-bold uppercase tracking-[0.45em] text-white/55">Options</div>
-            <div className="mt-6 space-y-3">
+      {/* ========================================================
+          EVOLVED READER: COMIC (LTR), MANGA (RTL), MANHWA (WEBTOON)
+          ======================================================== */}
+      {scene === 'READER' && readerComic && (
+        <main className="relative z-20 flex min-h-screen flex-col justify-between">
+          {/* Header Bar */}
+          <header className="psp-screen-bar !m-2">
+            <button type="button" onClick={closeReader}>
+              Back
+            </button>
+            <span>{readerComic.title}</span>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition hover:bg-white/10"
-                onClick={() => setReaderOptions((current) => ({ ...current, fitMode: current.fitMode === 'contain' ? 'cover' : 'contain' }))}
+                onClick={() => {
+                  const nextMode: ReadingMode =
+                    activeMode === 'paged'
+                      ? 'manga'
+                      : activeMode === 'manga'
+                        ? 'webtoon'
+                        : 'paged';
+                  const updated: ComicRecord = { ...readerComic, readingMode: nextMode };
+                  putComic(updated).catch(() => {});
+                  setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+                }}
+                title="Switch mode (Comic / Manga / Webtoon)"
               >
-                <span>Page Fit</span>
-                <span className="text-white/65">{readerOptions.fitMode === 'contain' ? 'Contain' : 'Cover'}</span>
+                {activeMode === 'webtoon'
+                  ? 'Manhwa'
+                  : activeMode === 'manga'
+                    ? 'Manga'
+                    : 'Comic'}
               </button>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition hover:bg-white/10"
-                onClick={() => setReaderOptions((current) => ({ ...current, readingDirection: current.readingDirection === 'ltr' ? 'rtl' : 'ltr' }))}
-              >
-                <span>Reading Direction</span>
-                <span className="text-white/65">{readerOptions.readingDirection === 'ltr' ? 'Left-to-right' : 'Right-to-left'}</span>
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-full border border-white/10 bg-white/5 px-4 py-3 text-sm text-white transition hover:bg-white/10"
-                onClick={() => setReaderOptions((current) => ({ ...current, showPageCounter: !current.showPageCounter }))}
-              >
-                <span>Page Counter</span>
-                <span className="text-white/65">{readerOptions.showPageCounter ? 'On' : 'Off'}</span>
+              <button type="button" onClick={() => toggleBookmark(readerComic)}>
+                {readerComic.bookmarked ? '★ Bookmarked' : '☆ Bookmark'}
               </button>
             </div>
-            <div className="mt-6 flex items-center justify-between gap-3">
+          </header>
+
+          {/* Reader Canvas / Stage */}
+          <section className="relative flex flex-1 items-center justify-center overflow-hidden">
+            {activeMode === 'webtoon' ? (
+              /* CONTINUOUS VERTICAL STRIP (Manhwa / Webtoon Mode) */
+              <div
+                ref={webtoonRef}
+                className="psp-webtoon-container"
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  const progress = Math.min(
+                    readerComic.pageCount - 1,
+                    Math.floor((el.scrollTop / (el.scrollHeight - el.clientHeight || 1)) * readerComic.pageCount),
+                  );
+                  if (progress !== pageIdx) {
+                    setPageIdx(progress);
+                  }
+                }}
+              >
+                {Array.from({ length: readerComic.pageCount }).map((_, idx) => (
+                  <div key={idx} className="w-full max-w-[840px] flex justify-center bg-black/40">
+                    {pageUrls[idx] ? (
+                      <img
+                        src={pageUrls[idx]}
+                        alt={`Page ${idx + 1}`}
+                        className="psp-webtoon-page"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="h-96 w-full flex items-center justify-center text-white/40 text-xs">
+                        Loading page {idx + 1}...
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* PAGED READER (Western Comic LTR or Manga RTL) */
+              <div
+                className="relative flex h-[calc(100vh-140px)] w-full max-w-[min(96vw,1280px)] items-center justify-center overflow-hidden rounded-[18px] border border-white/10 bg-black/50 shadow-2xl"
+                onWheel={(e) => {
+                  e.preventDefault();
+                  const delta = e.deltaY < 0 ? 0.15 : -0.15;
+                  setZoom((z) => Math.max(1, Math.min(3, z + delta)));
+                }}
+                onDoubleClick={() => {
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                }}
+                onPointerDown={(e) => {
+                  if (zoom <= 1) return;
+                  dragRef.current = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origX: pan.x,
+                    origY: pan.y,
+                  };
+                  (e.currentTarget as Element).setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  const drag = dragRef.current;
+                  if (!drag) return;
+                  setPan({
+                    x: drag.origX + (e.clientX - drag.startX),
+                    y: drag.origY + (e.clientY - drag.startY),
+                  });
+                }}
+                onPointerUp={(e) => {
+                  if (dragRef.current) {
+                    try {
+                      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+                    } catch {}
+                  }
+                  dragRef.current = null;
+                }}
+              >
+                <div
+                  className="flex h-full w-full items-center justify-center transition-transform duration-75"
+                  style={{
+                    transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  }}
+                >
+                  {settings.spread && window.innerWidth >= 1024 && pageIdx + 1 < readerComic.pageCount ? (
+                    <div className="grid h-full w-full grid-cols-2 gap-2 p-2">
+                      <div className="flex items-center justify-end">
+                        {pageUrls[pageIdx] && (
+                          <img
+                            src={pageUrls[pageIdx]}
+                            alt={`Page ${pageIdx + 1}`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center justify-start">
+                        {pageUrls[pageIdx + 1] && (
+                          <img
+                            src={pageUrls[pageIdx + 1]}
+                            alt={`Page ${pageIdx + 2}`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center p-2">
+                      {pageUrls[pageIdx] ? (
+                        <img
+                          src={pageUrls[pageIdx]}
+                          alt={`Page ${pageIdx + 1}`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-white/50 text-xs">Loading page {pageIdx + 1}...</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mode & Zoom indicator badge */}
+                <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/70">
+                  {activeMode === 'manga' ? 'Manga (RTL)' : 'Comic (LTR)'} • {Math.round(zoom * 100)}%
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Reader Footer Controls */}
+          <footer className="psp-btn-hints">
+            <button
+              type="button"
+              className="psp-screen-bar button text-xs px-3 py-1 rounded bg-white/10 hover:bg-white/20"
+              onClick={() => advancePage(-1)}
+            >
+              Prev
+            </button>
+            <span className="text-xs font-semibold text-white/80">
+              {pageIdx + 1} / {readerComic.pageCount}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, readerComic.pageCount - 1)}
+              value={pageIdx}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setPageIdx(next);
+                session?.prefetch(next, 3);
+              }}
+              className="w-32 md:w-48 accent-[#ff4535]"
+              aria-label="Page slider"
+            />
+            <button
+              type="button"
+              className="psp-screen-bar button text-xs px-3 py-1 rounded bg-white/10 hover:bg-white/20"
+              onClick={() => advancePage(1)}
+            >
+              Next
+            </button>
+            <span className="psp-btn-hint ml-4">
+              <img src={BTN.cross} alt="" /> Exit
+            </span>
+          </footer>
+        </main>
+      )}
+
+      {/* ========================================================
+          SETTINGS / OPTIONS MODAL
+          ======================================================== */}
+      {optionsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 backdrop-blur-md">
+          <div className="psp-modal-card w-full max-w-md p-6">
+            <div className="psp-screen-bar !m-0 !p-0 !h-10 border-b border-white/15 pb-2">
+              <span>PSP Settings & Preferences</span>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {/* Default Reading Mode */}
               <button
                 type="button"
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold tracking-[0.25em] text-white/80 transition hover:bg-white/10"
+                className="flex w-full items-center justify-between rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() =>
+                  setSettings((s) => ({
+                    ...s,
+                    defaultMode:
+                      s.defaultMode === 'auto'
+                        ? 'paged'
+                        : s.defaultMode === 'paged'
+                          ? 'manga'
+                          : s.defaultMode === 'manga'
+                            ? 'webtoon'
+                            : 'auto',
+                  }))
+                }
+              >
+                <span>Default Mode</span>
+                <span className="text-orange-400 font-semibold">
+                  {settings.defaultMode === 'auto'
+                    ? 'Auto-Detect'
+                    : MODE_LABEL[settings.defaultMode]}
+                </span>
+              </button>
+
+              {/* Two-page spread */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => setSettings((s) => ({ ...s, spread: !s.spread }))}
+              >
+                <span>2-Page Spread (Desktop)</span>
+                <span className="text-white/70">{settings.spread ? 'Enabled' : 'Disabled'}</span>
+              </button>
+
+              {/* Storage Info */}
+              <div className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-black/40 px-4 py-3 text-xs text-white/70">
+                <span>Stored Library</span>
+                <span>
+                  {comics.length} comics •{' '}
+                  {storageUsage ? formatBytes(storageUsage.usage) : 'Calculating...'}
+                </span>
+              </div>
+
+              {/* Delete Active / Clear All */}
+              {activeComic && (
+                <button
+                  type="button"
+                  className="w-full text-left rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-2 text-xs text-red-300 hover:bg-red-950/40"
+                  onClick={() => {
+                    handleDeleteComic(activeComic.id);
+                    setOptionsOpen(false);
+                  }}
+                >
+                  Delete Selected Comic ({activeComic.title})
+                </button>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-between pt-3 border-t border-white/10">
+              <button
+                type="button"
+                className="psp-read-btn text-xs px-5 py-2"
                 onClick={() => setOptionsOpen(false)}
               >
-                Close
+                Done (ESC)
               </button>
-              <div className="text-[10px] tracking-[0.25em] text-white/40">ESC TO CLOSE</div>
+              <button
+                type="button"
+                className="text-xs text-white/60 hover:text-white underline"
+                onClick={() => {
+                  setOptionsOpen(false);
+                  setControlsOpen(true);
+                }}
+              >
+                Controls Help
+              </button>
             </div>
           </div>
         </div>
-      ) : null}
-      </div>
+      )}
+
+      {/* ========================================================
+          CONTROLS GUIDE MODAL (PSP Template)
+          ======================================================== */}
+      {controlsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 backdrop-blur-md">
+          <div className="psp-modal-card w-full max-w-lg p-6">
+            <div className="psp-screen-bar !m-0 !p-0 !h-10 border-b border-white/15 pb-2">
+              <span>Controller & Keyboard Guide</span>
+            </div>
+
+            <div className="my-4 flex justify-center">
+              <img
+                src="/psp-assets/textures/ctrls_template.png"
+                alt="PSP Controls"
+                className="max-h-36 object-contain"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs text-white/80">
+              {KEY_HINTS.map((h) => (
+                <div key={h.action} className="flex justify-between border-b border-white/10 py-1">
+                  <span className="font-semibold text-orange-300">{h.label}</span>
+                  <span className="text-white/60">{h.keys}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                className="psp-read-btn text-xs px-5 py-2"
+                onClick={() => setControlsOpen(false)}
+              >
+                Close (ESC)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

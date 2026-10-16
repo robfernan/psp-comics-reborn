@@ -1,86 +1,113 @@
-# PSP Digital Comics
+# PSP Digital Comics Reborn
 
-A faithful recreation of the classic PSP Digital Comics reader, rebuilt for modern web, desktop, and mobile platforms. Browse your comic collection in a 3D carousel, read with customizable options, and pick up right where you left off — all while bringing your own CBZ files.
+![PSP Digital Comics Animation](PSP%20Digital%20Comics.gif)
 
-## Screenshots
+A faithful recreation and modern evolution of the classic PlayStation Portable (PSP) Digital Comics reader. Built with **React 19**, **TypeScript**, and **Bun**, this application pairs the nostalgic XMB-era interface and authentic firmware sprite assets with a modern reading engine supporting Western comics, Manga, and vertical Manhwa/Webtoons.
 
-### Start Screen
-![Start Screen](StartScreen_Screenshot.png)
+Bring your own `.cbz` and `.zip` archives or image folders — all stored locally and securely in your browser using IndexedDB.
 
-The main menu with navigation options including Browse Collection, Recently Added, Unread, Bookmarks, and Options.
+---
 
-### Comic Carousel
-![Comic Carousel](Carousel_Screenshot.png)
+## 📺 Video Demo & Walkthrough
 
-Browse your collection in a 3D carousel view. Navigate left/right to select comics.
+[![Watch the PSP Digital Comics Reborn Demo](https://img.youtube.com/vi/PD-8Q7aSv90/maxresdefault.jpg)](https://youtu.be/PD-8Q7aSv90)
 
-### Reader Options
-![Reader Options](Options_Screenshot.png)
+> 🎥 **[Watch the full walkthrough on YouTube](https://youtu.be/PD-8Q7aSv90)** to see the 3D carousel, XMB-style menus, and multi-format reader in action.
 
-Customize reading experience with settings for page fit, reading direction, and page counter.
+---
 
-## Features
+## ✨ Features
 
-- **PSP-Accurate UI** — Faithful recreation of the original PSP Digital Comics interface with authentic styling and navigation patterns
-- **3D Comic Carousel** — Browse your collection in an interactive 3D carousel with smooth transitions
-- **CBZ Support** — Open standard CBZ comic book archive files (users supply their own comics)
-- **Customizable Reader** — Configure page fit mode (contain/cover), reading direction (LTR/RTL), and page counter visibility
-- **Spread Mode** — Automatic two-page spread display on wide screens for an immersive reading experience
-- **Zoom & Pan** — Pinch or drag to zoom in/out and pan around pages in the reader
-- **Bookmark System** — Bookmark comics with position saving so you can resume exactly where you left off
-- **Read/Unread Tracking** — Automatically tracks which comics have been read, with dedicated Unread view
-- **Collection Views** — Filter your library by All, Recently Added, Unread, or Bookmarked
-- **Persistent Settings** — All preferences, bookmarks, and reading progress saved to localStorage
-- **WebGL Background** — Dynamic shader-based animated background for visual flair
-- **Responsive Design** — Scales gracefully across desktop, tablet, and mobile viewports
+- **Authentic PSP UI & Firmware Textures** — Built using genuine extracted PSP sprites: 9-slice menu bars (`menuitem_sel/unsel`), top bar chrome, controller button prompts (○, ✕, △, □), busy spinner, and the iconic animated wave ribbon background (`bg_wave.png`).
+- **Evolved Reading Modes**:
+  - **Western Comics (Paged LTR)** — Traditional left-to-right reading with optional 2-page spread on wide screens.
+  - **Manga (Paged RTL)** — Authentic right-to-left page turning.
+  - **Manhwa / Webtoons (Continuous Vertical Scroll)** — Seamless gapless vertical ribbon scroll for modern digital manhwa.
+- **Smart Format Detection** — Automatically detects webtoon proportions and parses `ComicInfo.xml` (ComicRack / Komga standard) for titles, issue numbers, and reading direction.
+- **Persistent Local Library** — Stored in browser IndexedDB. Archives are unpacked lazily with page caching and prefetching so even massive files open instantly.
+- **Clean Slate Privacy** — No bundled comics or third-party tracking; starts clean and only holds what you import.
+- **3D Cover Carousel** — Browse your library in a smooth, interactive 3D perspective carousel or a list view.
+- **Gamepad & Controller Support** — Full Web Gamepad API integration for PlayStation, Xbox, and standard controllers, alongside keyboard controls.
+- **Bookmark & Progress Tracking** — Tracks unread status and saves your exact page position so you can resume anytime.
 
-## Quick Start
+---
 
-Install dependencies:
+## 🎮 Controls Reference
 
+| Action | Controller (Gamepad) | Keyboard |
+|---|---|---|
+| **Navigate / Move** | D-Pad / Left Stick | Arrow Keys / W, A, S, D |
+| **Confirm / Next Page** | ○ (Circle / A) | Enter / Space / → |
+| **Back / Exit** | ✕ (Cross / B) | Escape / Backspace |
+| **Resume / Bookmark / Prev Page** | △ (Triangle / Y) | I / ← |
+| **Options / Bookmark Toggle** | □ (Square / X) | B |
+| **Page Up / Page Down** | L / R Shoulder Bumpers | Q / E or PageUp / PageDown |
+| **Pause / Return to Home** | START / SELECT | O / V |
+
+---
+
+## 🚀 Quick Start
+
+Ensure you have [Bun](https://bun.sh) installed.
+
+### 1. Install Dependencies
 ```bash
-npm install
+bun install
 ```
 
-Run dev server:
-
+### 2. Start Development Server
 ```bash
-npm run dev
+bun run dev
+```
+Open **[http://localhost:5173](http://localhost:5173)** in your browser.
+
+### 3. Type-check & Production Build
+```bash
+bun run build
 ```
 
-Build for production:
-
+### 4. Preview Production Build
 ```bash
-npm run build
+bun run preview
 ```
 
-Preview the production build:
+---
 
-```bash
-npm run preview
+## 📂 Project Structure
+
+```
+├── public/
+│   ├── psp-assets/
+│   │   ├── textures/       # Authentic PSP firmware UI sprites (9-slice items, top bar, buttons, logos)
+│   │   └── fonts/          # Firmware bitmap font sheets (kept for reference)
+│   ├── favicon.svg         # PSP-styled favicon
+│   └── sw.js               # Service Worker for offline capability
+├── src/
+│   ├── lib/
+│   │   ├── archive.ts      # CBZ/ZIP extraction, ComicInfo.xml parser, lazy page loader
+│   │   ├── db.ts           # IndexedDB persistence (comics metadata & files)
+│   │   ├── input.ts        # Unified Gamepad & Keyboard controller layer
+│   │   └── types.ts        # Comic, Settings, and ReadingMode definitions
+│   ├── App.tsx             # Main application shell (Main Menu, Carousel, Recent, Reader, Settings)
+│   ├── index.css           # Global resets & Tailwind base
+│   ├── main.tsx            # React application entry point
+│   └── psp-theme.css       # PSP wave ribbon animations and 9-slice sprite styling
+├── package.json            # Managed with Bun
+├── tsconfig.json           # Application TypeScript config
+├── tsconfig.node.json      # Vite Node TypeScript config
+└── vite.config.ts          # Vite build config
 ```
 
-## Tech Stack
+---
 
-- **Frontend:** React 19 + TypeScript
-- **Build Tool:** Vite 6
-- **Styling:** Tailwind CSS 3
-- **CBZ Handling:** JSZip for archive extraction
-- **Graphics:** WebGL shaders for animated background
+## 📱 Desktop & Mobile Packaging
 
-## PWA Support
+- **Desktop (Windows, macOS, Linux):** [Tauri](https://tauri.app/) is recommended for native builds with minimal footprint and memory usage.
+- **Mobile (Android, iOS):** [Capacitor](https://capacitorjs.com/) wraps the web build directly into native mobile applications.
 
-A `manifest.json` and service worker are included in `public/`. For full offline support and advanced caching, consider integrating `vite-plugin-pwa` or Workbox.
+---
 
-## Packaging
+## 📜 Attribution & License
 
-- **Desktop:** Wails is recommended for native desktop builds. Create a Wails project and point the frontend at this `dist/` build.
-- **Android/iOS:** Use Capacitor to wrap the web build into a native mobile app (APK/IPA).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-## Notes
-
-Do not distribute copyrighted comics with the release. The app expects users to supply their own CBZ files.
+- **License:** MIT
+- **PSP Assets:** Sprites extracted from Sony PlayStation Portable system firmware for educational and non-commercial personal homage.

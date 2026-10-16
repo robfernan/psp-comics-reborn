@@ -1,0 +1,443 @@
+/* ========================================================
+   PSP DIGITAL COMICS AUTHENTIC THEME & SPRITES
+   Assets sourced from original PSP firmware textures
+   ======================================================== */
+
+/* Wave Background Animation (Authentic PSP Wave Ribbon) */
+.psp-wave-ribbon {
+  position: fixed;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  width: max(960px, 110vw);
+  height: min(480px, 52vh);
+  min-height: 280px;
+  transform: translate(-50%, -50%);
+  background: url('/psp-assets/textures/bg_wave.png') center / 100% 100% no-repeat;
+  animation: psp-ribbon-drift 18s ease-in-out infinite alternate;
+  opacity: 0.82;
+  filter: saturate(1.15) contrast(1.08);
+  pointer-events: none;
+}
+
+.psp-wave-ribbon-secondary {
+  width: max(1200px, 140vw);
+  height: min(600px, 66vh);
+  opacity: 0.32;
+  animation-duration: 26s;
+  animation-delay: -8s;
+  transform: translate(-54%, -47%) scaleX(-1);
+  pointer-events: none;
+}
+
+@keyframes psp-ribbon-drift {
+  from {
+    margin-left: -8%;
+    transform: translate(-50%, -50%) scale(1.02);
+  }
+  to {
+    margin-left: 8%;
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
+/* Authentic PSP Digital Comics Logo */
+.psp-logo {
+  width: min(290px, 60vw);
+  height: auto;
+  image-rendering: auto;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.65));
+}
+
+/* 9-Slice Menu Items */
+.psp-menu-list {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.psp-menu-row {
+  position: relative;
+  height: 56px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  color: #2b2b2b;
+  font-size: clamp(15px, 2.2vw, 19px);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  user-select: none;
+}
+
+/* Unselected state (Brushed Metallic Slate/White) */
+.psp-menu-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    url('/psp-assets/textures/menuitem_unsel_l.png') left top / 16px 56px no-repeat,
+    url('/psp-assets/textures/menuitem_unsel_r.png') right top / 16px 56px no-repeat,
+    url('/psp-assets/textures/menuitem_unsel_m.png') center top / auto 56px repeat-x;
+}
+
+/* Active / Selected state (Vibrant Glossy PSP Red/Orange) */
+.psp-menu-row.active {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  transform: translateX(4px);
+}
+
+.psp-menu-row.active::before {
+  background-image:
+    url('/psp-assets/textures/menuitem_sel_l.png'),
+    url('/psp-assets/textures/menuitem_sel_r.png'),
+    url('/psp-assets/textures/menuitem_sel_m.png');
+}
+
+.psp-menu-row .psp-menu-label {
+  position: relative;
+  z-index: 1;
+}
+
+.psp-menu-row .psp-badge {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.12);
+  color: #444;
+  font-size: 0.65em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.psp-menu-row.active .psp-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Authentic Top Bar Chrome */
+.psp-screen-bar {
+  position: relative;
+  height: 48px;
+  margin: 12px 16px 16px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: clamp(14px, 2vw, 17px);
+  overflow: hidden;
+}
+
+.psp-screen-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    url('/psp-assets/textures/top_bar_left.png') left top / 32px 48px no-repeat,
+    url('/psp-assets/textures/top_bar_right.png') right top / 32px 48px no-repeat,
+    url('/psp-assets/textures/top_bar_middle.png') center top / auto 48px repeat-x;
+}
+
+.psp-screen-bar span {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.psp-screen-bar button,
+.psp-screen-bar label {
+  position: relative;
+  z-index: 1;
+  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  padding: 6px 14px;
+  font-size: 0.82em;
+  cursor: pointer;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: background 0.15s ease;
+}
+
+.psp-screen-bar button:hover:not(:disabled),
+.psp-screen-bar label:hover {
+  background: rgba(255, 60, 40, 0.45);
+}
+
+.psp-screen-bar input[type="file"] {
+  display: none;
+}
+
+/* Button Hints Bar (Controller & Keyboard action prompts) */
+.psp-btn-hints {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px 14px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+}
+
+.psp-btn-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78em;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.psp-btn-hint img {
+  width: 17px;
+  height: 17px;
+  image-rendering: pixelated;
+}
+
+/* Loading Spinner */
+.psp-spinner {
+  display: grid;
+  place-items: center;
+  padding: 30px;
+}
+
+.psp-spinner img {
+  width: 32px;
+  height: 32px;
+  animation: psp-spin 1.2s linear infinite;
+  image-rendering: pixelated;
+}
+
+@keyframes psp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Recently Added / List View */
+.psp-recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.psp-recent-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  min-height: 60px;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.psp-recent-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    url('/psp-assets/textures/menuitem_unsel_l.png') left top / 16px 100% no-repeat,
+    url('/psp-assets/textures/menuitem_unsel_r.png') right top / 16px 100% no-repeat,
+    url('/psp-assets/textures/menuitem_unsel_m.png') center top / auto 100% repeat-x;
+}
+
+.psp-recent-row.active {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.psp-recent-row.active::before {
+  background-image:
+    url('/psp-assets/textures/menuitem_sel_l.png'),
+    url('/psp-assets/textures/menuitem_sel_r.png'),
+    url('/psp-assets/textures/menuitem_sel_m.png');
+}
+
+.psp-recent-cover {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 60px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1a1a1a;
+  display: grid;
+  place-items: center;
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.psp-recent-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.psp-recent-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.psp-recent-info strong {
+  font-size: clamp(14px, 1.8vw, 17px);
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.psp-recent-row:not(.active) .psp-recent-info strong {
+  color: #2b2b2b;
+}
+
+.psp-recent-info small {
+  font-size: 0.75em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.psp-recent-row:not(.active) .psp-recent-info small {
+  color: #555;
+}
+
+.psp-read-btn {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  padding: 6px 14px;
+  border: 2px solid #ff4535;
+  border-radius: 6px;
+  background: linear-gradient(#ff3b28, #a90000);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.psp-read-btn:hover {
+  background: linear-gradient(#ff5a4d, #c41a0a);
+  box-shadow: 0 0 14px rgba(255, 60, 40, 0.6);
+  transform: scale(1.04);
+}
+
+/* Drag and Drop Overlay */
+.psp-drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(180, 20, 10, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border: 4px dashed rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* Webtoon / Manhwa Continuous Vertical Reader */
+.psp-webtoon-container {
+  width: 100%;
+  height: calc(100vh - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scroll-behavior: smooth;
+  padding: 0;
+  margin: 0;
+}
+
+.psp-webtoon-page {
+  display: block;
+  width: 100%;
+  max-width: 820px;
+  height: auto;
+  margin: 0 auto;
+  padding: 0;
+  vertical-align: bottom;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+
+/* PSP Dialog Box */
+.psp-modal-card {
+  position: relative;
+  background: rgba(12, 12, 14, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+}
+
+.psp-modal-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ff4535 30%, #ff8a38 70%, transparent);
+}
+
+/* Empty Collection Placeholder */
+.psp-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  text-align: center;
+}

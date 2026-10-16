@@ -1,12 +1,15 @@
 {
-  "name": "psp-digital-comics-recreation",
+  "name": "psp-digital-comics-reborn",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "A modern homage to the PSP Digital Comics reader. Read comics, manga and manhwa from your own CBZ/ZIP files.",
   "type": "module",
+  "packageManager": "bun@1.4.3",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "jszip": "^3.10.1",
