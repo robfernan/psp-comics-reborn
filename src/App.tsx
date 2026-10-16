@@ -186,7 +186,9 @@ export function App() {
     async (comic: ComicRecord) => {
       playConfirmChime(settings.soundEnabled);
       setReaderComicId(comic.id);
-      setPageIdx(comic.progress ?? 0);
+      const shouldResume = settings.autoBookmark || comic.bookmarked;
+      const startPage = shouldResume ? (comic.progress ?? 0) : 0;
+      setPageIdx(startPage);
       setZoom(1);
       setPan({ x: 0, y: 0 });
       setReaderLoading(true);
@@ -203,11 +205,12 @@ export function App() {
         });
 
         // Prefetch initial pages
-        newSession.prefetch(comic.progress ?? 0, 4);
+        newSession.prefetch(startPage, 4);
 
-        // Update lastReadAt
+        // Update lastReadAt and keep progress aligned with bookmark/auto-save state
         const updated: ComicRecord = {
           ...comic,
+          progress: shouldResume ? (comic.progress ?? 0) : 0,
           lastReadAt: Date.now(),
         };
         await putComic(updated);
@@ -218,18 +221,28 @@ export function App() {
         setReaderLoading(false);
       }
     },
-    [settings.soundEnabled],
+    [settings.soundEnabled, settings.autoBookmark],
   );
 
   // Bookmark toggle
   const toggleBookmark = useCallback(
     async (comic: ComicRecord) => {
       playConfirmChime(settings.soundEnabled);
-      const updated = { ...comic, bookmarked: !comic.bookmarked };
+      const willBeBookmarked = !comic.bookmarked;
+      // If toggling while currently reading this comic, save current pageIdx as the bookmark
+      const nextProgress = willBeBookmarked
+        ? (scene === 'READER' && readerComicId === comic.id ? pageIdx : (comic.progress ?? 0))
+        : (settings.autoBookmark ? comic.progress : 0);
+
+      const updated: ComicRecord = {
+        ...comic,
+        bookmarked: willBeBookmarked,
+        progress: nextProgress,
+      };
       await putComic(updated);
       setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     },
-    [settings.soundEnabled],
+    [settings.soundEnabled, settings.autoBookmark, scene, readerComicId, pageIdx],
   );
 
   // Delete comic
@@ -267,12 +280,16 @@ export function App() {
         setPageIdx(nextIdx);
         session.prefetch(nextIdx, 3);
         const finished = nextIdx >= total - 1;
-        const updated: ComicRecord = { ...readerComic, progress: nextIdx, finished };
-        putComic(updated).catch(() => {});
-        setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+        // Only persist progress to IndexedDB if autoBookmark is enabled or the comic is bookmarked
+        if (settings.autoBookmark || readerComic.bookmarked) {
+          const updated: ComicRecord = { ...readerComic, progress: nextIdx, finished };
+          putComic(updated).catch(() => {});
+          setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        }
       }
     },
-    [session, readerComic, activeMode, settings.spread, settings.soundEnabled, pageIdx],
+    [session, readerComic, activeMode, settings.spread, settings.soundEnabled, settings.autoBookmark, pageIdx],
   );
 
   // Load pages on demand for reader
@@ -523,6 +540,7 @@ export function App() {
           AUTHENTIC PSP WAVE RIBBON BACKGROUND (psp-theme.css)
           ======================================================== */}
       <div className="fixed inset-0 z-0 bg-[#020202] pointer-events-none" />
+      <div className="psp-wave-glow" aria-hidden />
       <div className="psp-wave-ribbon" aria-hidden />
       <div className="psp-wave-ribbon psp-wave-ribbon-secondary" aria-hidden />
 
@@ -672,7 +690,7 @@ export function App() {
                       </p>
                       <p className="text-[10px] text-white/60 tracking-wider">
                         {activeComic?.pageCount ? `${activeComic.pageCount} pages` : 'CBZ Archive'}
-                        {activeComic && activeComic.progress > 0
+                        {activeComic && (settings.autoBookmark || activeComic.bookmarked) && activeComic.progress > 0
                           ? ` • Page ${activeComic.progress + 1}`
                           : ''}
                       </p>
@@ -687,7 +705,9 @@ export function App() {
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <img src={BTN.triangle} alt="" className="w-3.5 h-3.5" />
-                        {activeComic.progress > 0 ? 'Resume' : 'Read'}
+                        {(settings.autoBookmark || activeComic.bookmarked) && activeComic.progress > 0
+                          ? `Resume (Page ${activeComic.progress + 1})`
+                          : 'Read'}
                       </span>
                     </button>
                   )}
@@ -778,7 +798,7 @@ export function App() {
                       className={[
                         'relative aspect-[2/3] overflow-hidden rounded-[20px] border bg-black/70 shadow-2xl transition-all duration-300 psp-carousel-reflection',
                         isActive
-                          ? 'border-[#ff5f1d] ring-2 ring-[#ff5f1d]/80 ring-offset-2 ring-offset-black shadow-[0_0_40px_rgba(255,100,30,0.6)]'
+                          ? 'psp-carousel-card-active ring-2 ring-white/50 ring-offset-2 ring-offset-black'
                           : 'border-white/20',
                       ].join(' ')}
                     >
@@ -971,6 +991,15 @@ export function App() {
                   );
                   if (progress !== pageIdx) {
                     setPageIdx(progress);
+                    if (settings.autoBookmark || readerComic.bookmarked) {
+                      const updated: ComicRecord = {
+                        ...readerComic,
+                        progress,
+                        finished: progress >= readerComic.pageCount - 1,
+                      };
+                      putComic(updated).catch(() => {});
+                      setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+                    }
                   }
                 }}
               >
@@ -1102,8 +1131,18 @@ export function App() {
                 const next = Number(e.target.value);
                 setPageIdx(next);
                 session?.prefetch(next, 3);
+                if (settings.autoBookmark || readerComic.bookmarked) {
+                  const updated: ComicRecord = {
+                    ...readerComic,
+                    progress: next,
+                    finished: next >= readerComic.pageCount - 1,
+                  };
+                  putComic(updated).catch(() => {});
+                  setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+                }
               }}
-              className="w-32 md:w-48 accent-[#ff4535]"
+              className="w-32 md:w-48 cursor-pointer"
+              style={{ accentColor: 'var(--psp-accent)' }}
               aria-label="Page slider"
             />
             <button
@@ -1113,7 +1152,14 @@ export function App() {
             >
               Next
             </button>
-            <span className="psp-btn-hint ml-4">
+            <button
+              type="button"
+              className="psp-btn-hint ml-2 cursor-pointer hover:text-white"
+              onClick={() => toggleBookmark(readerComic)}
+            >
+              <img src={BTN.square} alt="" /> {readerComic.bookmarked ? 'Bookmarked' : 'Bookmark'}
+            </button>
+            <span className="psp-btn-hint ml-2">
               <img src={BTN.cross} alt="" /> Exit
             </span>
           </footer>
@@ -1190,6 +1236,34 @@ export function App() {
                 <span>Sound Effects (PSP UI Audio)</span>
                 <span className={`font-semibold ${settings.soundEnabled ? 'text-green-400' : 'text-white/40'}`}>
                   {settings.soundEnabled ? '● Enabled' : '○ Muted'}
+                </span>
+              </button>
+
+              {/* Reading Persistence / Auto-Bookmark Option */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  const nextVal = !settings.autoBookmark;
+                  setSettings((s) => ({ ...s, autoBookmark: nextVal }));
+                  if (nextVal) playConfirmChime(settings.soundEnabled);
+                  else playCancelChime(settings.soundEnabled);
+                }}
+              >
+                <div className="text-left">
+                  <div className="font-medium">Reading Persistence</div>
+                  <div className="text-[11px] text-white/50">
+                    {settings.autoBookmark
+                      ? 'Auto-Save: Always resumes last read page'
+                      : 'Bookmarks Only: Always opens at Page 1 unless bookmarked'}
+                  </div>
+                </div>
+                <span
+                  className={`font-semibold shrink-0 ml-3 ${
+                    settings.autoBookmark ? 'text-amber-400' : 'text-sky-400'
+                  }`}
+                >
+                  {settings.autoBookmark ? '● Auto-Save' : '★ Bookmarks Only'}
                 </span>
               </button>
 

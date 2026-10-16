@@ -15,19 +15,37 @@
   transform: translate(-50%, -50%);
   background: url('/psp-assets/textures/bg_wave.png') center / 100% 100% no-repeat;
   animation: psp-ribbon-drift 18s ease-in-out infinite alternate;
-  opacity: 0.82;
-  filter: saturate(1.15) contrast(1.08);
+  opacity: 0.95;
+  mix-blend-mode: screen;
+  filter: var(--psp-filter, saturate(1.15) contrast(1.08));
+  transition: filter 0.4s ease, opacity 0.4s ease;
   pointer-events: none;
 }
 
 .psp-wave-ribbon-secondary {
   width: max(1200px, 140vw);
   height: min(600px, 66vh);
-  opacity: 0.32;
+  opacity: 0.48;
   animation-duration: 26s;
   animation-delay: -8s;
   transform: translate(-54%, -47%) scaleX(-1);
   pointer-events: none;
+}
+
+/* Ambient monthly theme color aura behind the wave */
+.psp-wave-glow {
+  position: fixed;
+  z-index: 0;
+  left: 50%;
+  top: 50%;
+  width: max(850px, 95vw);
+  height: min(460px, 52vh);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center, var(--psp-glow, rgba(255, 69, 53, 0.5)) 0%, transparent 68%);
+  opacity: 0.6;
+  filter: blur(48px);
+  pointer-events: none;
+  transition: background 0.4s ease, opacity 0.4s ease;
 }
 
 @keyframes psp-ribbon-drift {
@@ -345,20 +363,21 @@
   position: relative;
   z-index: 1;
   padding: 6px 14px;
-  border: 2px solid #ff4535;
+  border: 2px solid var(--psp-accent, #ff4535);
   border-radius: 6px;
-  background: linear-gradient(#ff3b28, #a90000);
+  background: linear-gradient(var(--psp-accent, #ff3b28), var(--psp-accent-dark, #a90000));
   color: #fff;
   font-weight: 700;
   font-size: 0.78em;
   letter-spacing: 0.08em;
   cursor: pointer;
-  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 15px var(--psp-glow, rgba(255, 69, 53, 0.45));
+  transition: transform 0.1s ease, box-shadow 0.2s ease, border-color 0.25s ease, background 0.25s ease;
 }
 
 .psp-read-btn:hover {
-  background: linear-gradient(#ff5a4d, #c41a0a);
-  box-shadow: 0 0 14px rgba(255, 60, 40, 0.6);
+  filter: brightness(1.15);
+  box-shadow: 0 0 18px var(--psp-glow, rgba(255, 60, 40, 0.65));
   transform: scale(1.04);
 }
 
@@ -425,7 +444,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #ff4535 30%, #ff8a38 70%, transparent);
+  background: linear-gradient(90deg, transparent, var(--psp-accent, #ff4535) 30%, var(--psp-accent-dark, #ff8a38) 70%, transparent);
 }
 
 /* Empty Collection Placeholder */
@@ -447,6 +466,11 @@
   -webkit-box-reflect: below 8px linear-gradient(transparent 75%, rgba(0, 0, 0, 0.35));
 }
 
+.psp-carousel-card-active {
+  border-color: var(--psp-accent, #ff5f1d) !important;
+  box-shadow: 0 0 40px var(--psp-glow, rgba(255, 100, 30, 0.6)) !important;
+}
+
 /* ========================================================
    PSP MONTHLY FIRMWARE COLOR THEMES
    Accurately matched to Sony PSP System Software 3.70+
@@ -456,197 +480,118 @@
 [data-theme="classic-red"], :root {
   --psp-accent: #ff4535;
   --psp-accent-dark: #b82218;
+  --psp-glow: rgba(255, 69, 53, 0.65);
+  --psp-filter: brightness(1.3) saturate(1.4) contrast(1.08);
 }
 
 /* January • Platinum Frost */
 [data-theme="jan-silver"] {
-  --psp-accent: #94a3b8;
-  --psp-accent-dark: #475569;
-}
-[data-theme="jan-silver"] .psp-wave-ribbon {
-  filter: grayscale(0.85) brightness(1.15) contrast(1.1);
-}
-[data-theme="jan-silver"] .psp-read-btn {
-  border-color: #94a3b8;
-  background: linear-gradient(#94a3b8, #475569);
+  --psp-accent: #cbd5e1;
+  --psp-accent-dark: #64748b;
+  --psp-glow: rgba(203, 213, 225, 0.7);
+  --psp-filter: grayscale(1) brightness(2.6) contrast(1.15);
 }
 
 /* February • Canary Yellow */
 [data-theme="feb-butter"] {
-  --psp-accent: #eab308;
-  --psp-accent-dark: #a16207;
-}
-[data-theme="feb-butter"] .psp-wave-ribbon {
-  filter: hue-rotate(40deg) saturate(1.3) contrast(1.1);
-}
-[data-theme="feb-butter"] .psp-read-btn {
-  border-color: #eab308;
-  background: linear-gradient(#eab308, #a16207);
+  --psp-accent: #facc15;
+  --psp-accent-dark: #ca8a04;
+  --psp-glow: rgba(250, 204, 21, 0.85);
+  --psp-filter: hue-rotate(60deg) brightness(2.2) saturate(3.5) contrast(1.1);
 }
 
 /* March • Spring Sprout */
 [data-theme="mar-spring"] {
   --psp-accent: #84cc16;
   --psp-accent-dark: #4d7c0f;
-}
-[data-theme="mar-spring"] .psp-wave-ribbon {
-  filter: hue-rotate(80deg) saturate(1.25) contrast(1.1);
-}
-[data-theme="mar-spring"] .psp-read-btn {
-  border-color: #84cc16;
-  background: linear-gradient(#84cc16, #4d7c0f);
+  --psp-glow: rgba(132, 204, 22, 0.7);
+  --psp-filter: hue-rotate(85deg) brightness(2.2) saturate(2.6) contrast(1.1);
 }
 
 /* April • Sakura Blossom */
 [data-theme="apr-sakura"], [data-theme="rose-pink"] {
   --psp-accent: #f472b6;
   --psp-accent-dark: #be185d;
-}
-[data-theme="apr-sakura"] .psp-wave-ribbon,
-[data-theme="rose-pink"] .psp-wave-ribbon {
-  filter: hue-rotate(320deg) saturate(1.2) contrast(1.1);
-}
-[data-theme="apr-sakura"] .psp-read-btn,
-[data-theme="rose-pink"] .psp-read-btn {
-  border-color: #ec4899;
-  background: linear-gradient(#ec4899, #be185d);
+  --psp-glow: rgba(244, 114, 182, 0.7);
+  --psp-filter: hue-rotate(318deg) brightness(2.0) saturate(2.0) contrast(1.1);
 }
 
 /* May • Emerald Forest */
 [data-theme="may-emerald"], [data-theme="emerald-green"] {
   --psp-accent: #22c55e;
   --psp-accent-dark: #15803d;
-}
-[data-theme="may-emerald"] .psp-wave-ribbon,
-[data-theme="emerald-green"] .psp-wave-ribbon {
-  filter: hue-rotate(120deg) saturate(1.25) contrast(1.1);
-}
-[data-theme="may-emerald"] .psp-read-btn,
-[data-theme="emerald-green"] .psp-read-btn {
-  border-color: #22c55e;
-  background: linear-gradient(#22c55e, #15803d);
+  --psp-glow: rgba(34, 197, 94, 0.75);
+  --psp-filter: hue-rotate(120deg) brightness(2.2) saturate(2.4) contrast(1.1);
 }
 
 /* June • Summer Sky */
 [data-theme="jun-sky"] {
   --psp-accent: #38bdf8;
   --psp-accent-dark: #0369a1;
-}
-[data-theme="jun-sky"] .psp-wave-ribbon {
-  filter: hue-rotate(185deg) saturate(1.25) contrast(1.1);
-}
-[data-theme="jun-sky"] .psp-read-btn {
-  border-color: #38bdf8;
-  background: linear-gradient(#38bdf8, #0369a1);
+  --psp-glow: rgba(56, 189, 248, 0.75);
+  --psp-filter: hue-rotate(185deg) brightness(2.5) saturate(2.6) contrast(1.1);
 }
 
 /* July • Ocean Cyan */
 [data-theme="jul-cyan"] {
   --psp-accent: #06b6d4;
   --psp-accent-dark: #0e7490;
-}
-[data-theme="jul-cyan"] .psp-wave-ribbon {
-  filter: hue-rotate(165deg) saturate(1.3) contrast(1.1);
-}
-[data-theme="jul-cyan"] .psp-read-btn {
-  border-color: #06b6d4;
-  background: linear-gradient(#06b6d4, #0e7490);
+  --psp-glow: rgba(6, 182, 212, 0.8);
+  --psp-filter: hue-rotate(162deg) brightness(2.5) saturate(2.8) contrast(1.15);
 }
 
 /* August • Midnight Cobalt */
 [data-theme="aug-midnight"], [data-theme="midnight-blue"] {
   --psp-accent: #3b82f6;
   --psp-accent-dark: #1d4ed8;
-}
-[data-theme="aug-midnight"] .psp-wave-ribbon,
-[data-theme="midnight-blue"] .psp-wave-ribbon {
-  filter: hue-rotate(210deg) saturate(1.25) contrast(1.1);
-}
-[data-theme="aug-midnight"] .psp-read-btn,
-[data-theme="midnight-blue"] .psp-read-btn {
-  border-color: #3b82f6;
-  background: linear-gradient(#3b82f6, #1d4ed8);
+  --psp-glow: rgba(59, 130, 246, 0.8);
+  --psp-filter: hue-rotate(210deg) brightness(2.5) saturate(2.5) contrast(1.15);
 }
 
 /* September • Royal Amethyst */
 [data-theme="sep-amethyst"], [data-theme="royal-purple"] {
   --psp-accent: #a855f7;
   --psp-accent-dark: #6b21a8;
-}
-[data-theme="sep-amethyst"] .psp-wave-ribbon,
-[data-theme="royal-purple"] .psp-wave-ribbon {
-  filter: hue-rotate(275deg) saturate(1.25) contrast(1.1);
-}
-[data-theme="sep-amethyst"] .psp-read-btn,
-[data-theme="royal-purple"] .psp-read-btn {
-  border-color: #a855f7;
-  background: linear-gradient(#a855f7, #6b21a8);
+  --psp-glow: rgba(168, 85, 247, 0.75);
+  --psp-filter: hue-rotate(270deg) brightness(2.2) saturate(2.4) contrast(1.15);
 }
 
 /* October • Autumn Gold */
 [data-theme="oct-gold"], [data-theme="cyber-gold"] {
   --psp-accent: #f59e0b;
   --psp-accent-dark: #b45309;
-}
-[data-theme="oct-gold"] .psp-wave-ribbon,
-[data-theme="cyber-gold"] .psp-wave-ribbon {
-  filter: hue-rotate(30deg) saturate(1.35) contrast(1.15);
-}
-[data-theme="oct-gold"] .psp-read-btn,
-[data-theme="cyber-gold"] .psp-read-btn {
-  border-color: #f59e0b;
-  background: linear-gradient(#f59e0b, #b45309);
+  --psp-glow: rgba(245, 158, 11, 0.85);
+  --psp-filter: hue-rotate(52deg) brightness(2.2) saturate(3.2) contrast(1.1);
 }
 
 /* November • Warm Amber */
 [data-theme="nov-amber"] {
   --psp-accent: #ea580c;
   --psp-accent-dark: #9a3412;
-}
-[data-theme="nov-amber"] .psp-wave-ribbon {
-  filter: hue-rotate(15deg) saturate(1.3) contrast(1.1);
-}
-[data-theme="nov-amber"] .psp-read-btn {
-  border-color: #ea580c;
-  background: linear-gradient(#ea580c, #9a3412);
+  --psp-glow: rgba(234, 88, 12, 0.75);
+  --psp-filter: hue-rotate(22deg) brightness(2.0) saturate(2.2) contrast(1.1);
 }
 
 /* December • Deep Crimson Ruby */
 [data-theme="dec-ruby"] {
   --psp-accent: #e11d48;
   --psp-accent-dark: #9f1239;
-}
-[data-theme="dec-ruby"] .psp-wave-ribbon {
-  filter: hue-rotate(350deg) saturate(1.2) contrast(1.1);
-}
-[data-theme="dec-ruby"] .psp-read-btn {
-  border-color: #e11d48;
-  background: linear-gradient(#e11d48, #9f1239);
+  --psp-glow: rgba(225, 29, 72, 0.7);
+  --psp-filter: hue-rotate(345deg) brightness(1.7) saturate(1.8) contrast(1.1);
 }
 
 /* Monolith Noir (OLED Minimal) */
 [data-theme="monolith-black"] {
   --psp-accent: #ffffff;
   --psp-accent-dark: #334155;
-}
-[data-theme="monolith-black"] .psp-wave-ribbon {
-  filter: grayscale(1) opacity(0.35);
-}
-[data-theme="monolith-black"] .psp-read-btn {
-  border-color: #ffffff;
-  background: linear-gradient(#444, #111);
+  --psp-glow: rgba(255, 255, 255, 0.5);
+  --psp-filter: grayscale(1) brightness(1.4) contrast(1.3);
 }
 
 /* Cyberpunk Neon */
 [data-theme="cyberpunk-neon"] {
   --psp-accent: #00f0ff;
   --psp-accent-dark: #7000ff;
-}
-[data-theme="cyberpunk-neon"] .psp-wave-ribbon {
-  filter: hue-rotate(155deg) saturate(2.4) contrast(1.25);
-}
-[data-theme="cyberpunk-neon"] .psp-read-btn {
-  border-color: #00f0ff;
-  background: linear-gradient(#00f0ff, #7000ff);
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+  --psp-glow: rgba(0, 240, 255, 0.85);
+  --psp-filter: hue-rotate(155deg) brightness(2.8) saturate(3.2) contrast(1.25);
 }

@@ -100,6 +100,7 @@ export interface Settings {
   sort: 'added' | 'read' | 'title';
   theme: ThemeColor;
   soundEnabled: boolean;
+  autoBookmark: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,6 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sort: 'added',
   theme: 'classic-red',
   soundEnabled: true,
+  autoBookmark: false,
 };
 
 export type LibraryFilter = 'all' | 'reading' | 'unread' | 'bookmarked';
