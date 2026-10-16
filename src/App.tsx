@@ -12,6 +12,12 @@ import {
   getStorageEstimate,
   putComic,
 } from './lib/db';
+import {
+  playCancelChime,
+  playConfirmChime,
+  playCursorTick,
+  playPageTurn,
+} from './lib/audio';
 import { Action, KEY_HINTS, useInput } from './lib/input';
 import {
   ComicRecord,
@@ -20,7 +26,10 @@ import {
   MODE_LABEL,
   ReadingMode,
   Settings,
+  THEME_CONFIGS,
+  ThemeColor,
   effectiveMode,
+  getCurrentMonthTheme,
 } from './lib/types';
 import './psp-theme.css';
 
@@ -175,6 +184,7 @@ export function App() {
   // Open Reader
   const openReader = useCallback(
     async (comic: ComicRecord) => {
+      playConfirmChime(settings.soundEnabled);
       setReaderComicId(comic.id);
       setPageIdx(comic.progress ?? 0);
       setZoom(1);
@@ -208,29 +218,31 @@ export function App() {
         setReaderLoading(false);
       }
     },
-    [],
+    [settings.soundEnabled],
   );
 
   // Bookmark toggle
   const toggleBookmark = useCallback(
     async (comic: ComicRecord) => {
+      playConfirmChime(settings.soundEnabled);
       const updated = { ...comic, bookmarked: !comic.bookmarked };
       await putComic(updated);
       setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     },
-    [],
+    [settings.soundEnabled],
   );
 
   // Delete comic
   const handleDeleteComic = useCallback(
     async (id: string) => {
       if (!confirm('Are you sure you want to remove this comic from your library?')) return;
+      playCancelChime(settings.soundEnabled);
       await deleteComic(id);
       setComics((prev) => prev.filter((c) => c.id !== id));
       setCarouselIdx(0);
       setRecentIdx(0);
     },
-    [],
+    [settings.soundEnabled],
   );
 
   // Page advancement
@@ -251,6 +263,7 @@ export function App() {
       const nextIdx = Math.max(0, Math.min(total - 1, pageIdx + delta * step * direction));
 
       if (nextIdx !== pageIdx) {
+        playPageTurn(settings.soundEnabled);
         setPageIdx(nextIdx);
         session.prefetch(nextIdx, 3);
         const finished = nextIdx >= total - 1;
@@ -259,7 +272,7 @@ export function App() {
         setComics((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       }
     },
-    [session, readerComic, activeMode, settings.spread, pageIdx],
+    [session, readerComic, activeMode, settings.spread, settings.soundEnabled, pageIdx],
   );
 
   // Load pages on demand for reader
@@ -299,6 +312,7 @@ export function App() {
     (action: Action) => {
       if (controlsOpen) {
         if (action === 'back' || action === 'confirm') {
+          playCancelChime(settings.soundEnabled);
           setControlsOpen(false);
           return;
         }
@@ -307,6 +321,7 @@ export function App() {
 
       if (optionsOpen) {
         if (action === 'back' || action === 'start') {
+          playCancelChime(settings.soundEnabled);
           setOptionsOpen(false);
           return;
         }
@@ -316,10 +331,13 @@ export function App() {
       switch (scene) {
         case 'MAIN_MENU':
           if (action === 'down') {
+            playCursorTick(settings.soundEnabled);
             setMenuIdx((i) => (i + 1) % MENU_ITEMS.length);
           } else if (action === 'up') {
+            playCursorTick(settings.soundEnabled);
             setMenuIdx((i) => (i - 1 + MENU_ITEMS.length) % MENU_ITEMS.length);
           } else if (action === 'confirm') {
+            playConfirmChime(settings.soundEnabled);
             const item = MENU_ITEMS[menuIdx];
             if (item.id === 'options') {
               setOptionsOpen(true);
@@ -332,42 +350,64 @@ export function App() {
               setScene('CAROUSEL');
             }
           } else if (action === 'triangle') {
-            if (activeComic) openReader(activeComic);
-            else if (fileInputRef.current) fileInputRef.current.click();
+            if (activeComic) {
+              playConfirmChime(settings.soundEnabled);
+              openReader(activeComic);
+            } else if (fileInputRef.current) {
+              fileInputRef.current.click();
+            }
           } else if (action === 'square') {
+            playConfirmChime(settings.soundEnabled);
             setOptionsOpen(true);
           } else if (action === 'left') {
+            playCursorTick(settings.soundEnabled);
             setCarouselIdx((i) => (i - 1 + filteredComics.length) % Math.max(1, filteredComics.length));
           } else if (action === 'right') {
+            playCursorTick(settings.soundEnabled);
             setCarouselIdx((i) => (i + 1) % Math.max(1, filteredComics.length));
           }
           break;
 
         case 'CAROUSEL':
           if (action === 'left') {
+            playCursorTick(settings.soundEnabled);
             setCarouselIdx((i) => Math.max(0, i - 1));
           } else if (action === 'right') {
+            playCursorTick(settings.soundEnabled);
             setCarouselIdx((i) => Math.min(filteredComics.length - 1, i + 1));
           } else if (action === 'confirm') {
             const c = filteredComics[carouselIdx];
-            if (c) openReader(c);
+            if (c) {
+              playConfirmChime(settings.soundEnabled);
+              openReader(c);
+            }
           } else if (action === 'triangle') {
             const c = filteredComics[carouselIdx];
-            if (c) toggleBookmark(c);
+            if (c) {
+              playConfirmChime(settings.soundEnabled);
+              toggleBookmark(c);
+            }
           } else if (action === 'back' || action === 'start' || action === 'select') {
+            playCancelChime(settings.soundEnabled);
             setScene('MAIN_MENU');
           }
           break;
 
         case 'RECENT_LIST':
           if (action === 'down') {
+            playCursorTick(settings.soundEnabled);
             setRecentIdx((i) => Math.min(comics.length - 1, i + 1));
           } else if (action === 'up') {
+            playCursorTick(settings.soundEnabled);
             setRecentIdx((i) => Math.max(0, i - 1));
           } else if (action === 'confirm' || action === 'triangle') {
             const c = comics[recentIdx];
-            if (c) openReader(c);
+            if (c) {
+              playConfirmChime(settings.soundEnabled);
+              openReader(c);
+            }
           } else if (action === 'back' || action === 'start' || action === 'select') {
+            playCancelChime(settings.soundEnabled);
             setScene('MAIN_MENU');
           }
           break;
@@ -375,17 +415,23 @@ export function App() {
         case 'READER':
           if (activeMode === 'webtoon') {
             if (action === 'down' || action === 'r') {
+              playCursorTick(settings.soundEnabled);
               webtoonRef.current?.scrollBy({ top: 400, behavior: 'smooth' });
             } else if (action === 'up' || action === 'l') {
+              playCursorTick(settings.soundEnabled);
               webtoonRef.current?.scrollBy({ top: -400, behavior: 'smooth' });
             } else if (action === 'confirm' || action === 'right') {
               advancePage(1);
             } else if (action === 'triangle' || action === 'left') {
               advancePage(-1);
             } else if (action === 'back' || action === 'start') {
-              setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
+              playCancelChime(settings.soundEnabled);
+              closeReader();
             } else if (action === 'square') {
-              if (readerComic) toggleBookmark(readerComic);
+              if (readerComic) {
+                playConfirmChime(settings.soundEnabled);
+                toggleBookmark(readerComic);
+              }
             }
           } else {
             if (action === 'confirm' || action === 'right' || action === 'r') {
@@ -393,9 +439,13 @@ export function App() {
             } else if (action === 'triangle' || action === 'left' || action === 'l') {
               advancePage(-1);
             } else if (action === 'square') {
-              if (readerComic) toggleBookmark(readerComic);
+              if (readerComic) {
+                playConfirmChime(settings.soundEnabled);
+                toggleBookmark(readerComic);
+              }
             } else if (action === 'back' || action === 'start') {
-              setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
+              playCancelChime(settings.soundEnabled);
+              closeReader();
             }
           }
           break;
@@ -413,10 +463,11 @@ export function App() {
 
   // Clean-up session when closing reader
   const closeReader = useCallback(() => {
+    playCancelChime(settings.soundEnabled);
     session?.dispose();
     setSession(null);
     setScene(filter === 'all' ? 'CAROUSEL' : 'MAIN_MENU');
-  }, [session, filter]);
+  }, [session, filter, settings.soundEnabled]);
 
   // 3D Carousel Cards Calculation
   const carouselCards = useMemo(() => {
@@ -452,6 +503,7 @@ export function App() {
 
   return (
     <div
+      data-theme={settings.theme}
       className="relative min-h-screen w-full bg-[#020202] text-white overflow-hidden select-none font-sans"
       onDragOver={(e) => {
         e.preventDefault();
@@ -724,7 +776,7 @@ export function App() {
                   >
                     <div
                       className={[
-                        'relative aspect-[2/3] overflow-hidden rounded-[20px] border bg-black/70 shadow-2xl transition-all duration-300',
+                        'relative aspect-[2/3] overflow-hidden rounded-[20px] border bg-black/70 shadow-2xl transition-all duration-300 psp-carousel-reflection',
                         isActive
                           ? 'border-[#ff5f1d] ring-2 ring-[#ff5f1d]/80 ring-offset-2 ring-offset-black shadow-[0_0_40px_rgba(255,100,30,0.6)]'
                           : 'border-white/20',
@@ -1073,17 +1125,80 @@ export function App() {
           ======================================================== */}
       {optionsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 backdrop-blur-md">
-          <div className="psp-modal-card w-full max-w-md p-6">
-            <div className="psp-screen-bar !m-0 !p-0 !h-10 border-b border-white/15 pb-2">
+          <div className="psp-modal-card w-full max-w-lg p-5 md:p-6 max-h-[90vh] flex flex-col">
+            <div className="psp-screen-bar !m-0 !p-0 !h-10 border-b border-white/15 pb-2 shrink-0">
               <span>PSP Settings & Preferences</span>
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
+              {/* Theme Color Selection (PSP 12-Month Firmware + Specials) */}
+              <div className="rounded-xl border border-white/15 bg-white/5 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-white/90 text-sm">Theme Color (PSP Monthly Colors)</span>
+                  <button
+                    type="button"
+                    className="text-[11px] px-2.5 py-1 rounded border border-white/20 bg-white/10 hover:bg-white/20 text-orange-300 font-mono"
+                    onClick={() => {
+                      const m = getCurrentMonthTheme();
+                      setSettings((s) => ({ ...s, theme: m }));
+                      playConfirmChime(settings.soundEnabled);
+                    }}
+                  >
+                    Auto (This Month)
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto p-1 rounded-lg bg-black/30 border border-white/10">
+                  {THEME_CONFIGS.map((cfg) => {
+                    const isSelected = settings.theme === cfg.id;
+                    return (
+                      <button
+                        key={cfg.id}
+                        type="button"
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded text-left transition-all text-[11px] ${
+                          isSelected
+                            ? 'bg-white/20 font-bold border border-white/40 shadow-sm'
+                            : 'hover:bg-white/10 text-white/70'
+                        }`}
+                        onClick={() => {
+                          setSettings((s) => ({ ...s, theme: cfg.id }));
+                          playConfirmChime(settings.soundEnabled);
+                        }}
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                          style={{ backgroundColor: cfg.accent }}
+                        />
+                        <span className="truncate">{cfg.season ? `${cfg.season} • ` : ''}{cfg.label.split('•')[0]?.replace(/\(.*\)/, '') || cfg.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sound Effects Toggle */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  const nextVal = !settings.soundEnabled;
+                  setSettings((s) => ({ ...s, soundEnabled: nextVal }));
+                  if (nextVal) playConfirmChime(true);
+                  else playCancelChime(true);
+                }}
+              >
+                <span>Sound Effects (PSP UI Audio)</span>
+                <span className={`font-semibold ${settings.soundEnabled ? 'text-green-400' : 'text-white/40'}`}>
+                  {settings.soundEnabled ? '● Enabled' : '○ Muted'}
+                </span>
+              </button>
+
               {/* Default Reading Mode */}
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
-                onClick={() =>
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  playConfirmChime(settings.soundEnabled);
                   setSettings((s) => ({
                     ...s,
                     defaultMode:
@@ -1094,10 +1209,10 @@ export function App() {
                           : s.defaultMode === 'manga'
                             ? 'webtoon'
                             : 'auto',
-                  }))
-                }
+                  }));
+                }}
               >
-                <span>Default Mode</span>
+                <span>Default Reading Mode</span>
                 <span className="text-orange-400 font-semibold">
                   {settings.defaultMode === 'auto'
                     ? 'Auto-Detect'
@@ -1108,15 +1223,51 @@ export function App() {
               {/* Two-page spread */}
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-lg border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
-                onClick={() => setSettings((s) => ({ ...s, spread: !s.spread }))}
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  playConfirmChime(settings.soundEnabled);
+                  setSettings((s) => ({ ...s, spread: !s.spread }));
+                }}
               >
                 <span>2-Page Spread (Desktop)</span>
                 <span className="text-white/70">{settings.spread ? 'Enabled' : 'Disabled'}</span>
               </button>
 
+              {/* Fit Mode */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  playConfirmChime(settings.soundEnabled);
+                  setSettings((s) => ({
+                    ...s,
+                    fit: s.fit === 'contain' ? 'width' : s.fit === 'width' ? 'height' : 'contain',
+                  }));
+                }}
+              >
+                <span>Display Fit</span>
+                <span className="text-white/70 capitalize">{settings.fit}</span>
+              </button>
+
+              {/* Fullscreen Toggle */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white hover:bg-white/10"
+                onClick={() => {
+                  playConfirmChime(settings.soundEnabled);
+                  if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                  } else {
+                    document.exitFullscreen().catch(() => {});
+                  }
+                }}
+              >
+                <span>Toggle Fullscreen Display</span>
+                <span className="text-white/70">F11</span>
+              </button>
+
               {/* Storage Info */}
-              <div className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-black/40 px-4 py-3 text-xs text-white/70">
+              <div className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-white/70">
                 <span>Stored Library</span>
                 <span>
                   {comics.length} comics •{' '}
@@ -1128,7 +1279,7 @@ export function App() {
               {activeComic && (
                 <button
                   type="button"
-                  className="w-full text-left rounded-lg border border-red-500/30 bg-red-950/20 px-4 py-2 text-xs text-red-300 hover:bg-red-950/40"
+                  className="w-full text-left rounded-xl border border-red-500/30 bg-red-950/20 px-4 py-2.5 text-xs text-red-300 hover:bg-red-950/40"
                   onClick={() => {
                     handleDeleteComic(activeComic.id);
                     setOptionsOpen(false);
@@ -1139,18 +1290,22 @@ export function App() {
               )}
             </div>
 
-            <div className="mt-6 flex items-center justify-between pt-3 border-t border-white/10">
+            <div className="mt-4 flex items-center justify-between pt-3 border-t border-white/10 shrink-0">
               <button
                 type="button"
-                className="psp-read-btn text-xs px-5 py-2"
-                onClick={() => setOptionsOpen(false)}
+                className="psp-read-btn text-xs px-6 py-2"
+                onClick={() => {
+                  playCancelChime(settings.soundEnabled);
+                  setOptionsOpen(false);
+                }}
               >
                 Done (ESC)
               </button>
               <button
                 type="button"
-                className="text-xs text-white/60 hover:text-white underline"
+                className="text-xs text-white/60 hover:text-white underline cursor-pointer"
                 onClick={() => {
+                  playConfirmChime(settings.soundEnabled);
                   setOptionsOpen(false);
                   setControlsOpen(true);
                 }}
@@ -1193,7 +1348,10 @@ export function App() {
               <button
                 type="button"
                 className="psp-read-btn text-xs px-5 py-2"
-                onClick={() => setControlsOpen(false)}
+                onClick={() => {
+                  playCancelChime(settings.soundEnabled);
+                  setControlsOpen(false);
+                }}
               >
                 Close (ESC)
               </button>

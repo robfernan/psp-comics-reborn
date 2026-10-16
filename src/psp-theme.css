@@ -441,3 +441,212 @@
   color: #fff;
   text-align: center;
 }
+
+/* 3D Carousel Floor Reflection (PSP Cover Flow) */
+.psp-carousel-reflection {
+  -webkit-box-reflect: below 8px linear-gradient(transparent 75%, rgba(0, 0, 0, 0.35));
+}
+
+/* ========================================================
+   PSP MONTHLY FIRMWARE COLOR THEMES
+   Accurately matched to Sony PSP System Software 3.70+
+   ======================================================== */
+
+/* Classic Red (Original PSP Digital Comics) */
+[data-theme="classic-red"], :root {
+  --psp-accent: #ff4535;
+  --psp-accent-dark: #b82218;
+}
+
+/* January • Platinum Frost */
+[data-theme="jan-silver"] {
+  --psp-accent: #94a3b8;
+  --psp-accent-dark: #475569;
+}
+[data-theme="jan-silver"] .psp-wave-ribbon {
+  filter: grayscale(0.85) brightness(1.15) contrast(1.1);
+}
+[data-theme="jan-silver"] .psp-read-btn {
+  border-color: #94a3b8;
+  background: linear-gradient(#94a3b8, #475569);
+}
+
+/* February • Canary Yellow */
+[data-theme="feb-butter"] {
+  --psp-accent: #eab308;
+  --psp-accent-dark: #a16207;
+}
+[data-theme="feb-butter"] .psp-wave-ribbon {
+  filter: hue-rotate(40deg) saturate(1.3) contrast(1.1);
+}
+[data-theme="feb-butter"] .psp-read-btn {
+  border-color: #eab308;
+  background: linear-gradient(#eab308, #a16207);
+}
+
+/* March • Spring Sprout */
+[data-theme="mar-spring"] {
+  --psp-accent: #84cc16;
+  --psp-accent-dark: #4d7c0f;
+}
+[data-theme="mar-spring"] .psp-wave-ribbon {
+  filter: hue-rotate(80deg) saturate(1.25) contrast(1.1);
+}
+[data-theme="mar-spring"] .psp-read-btn {
+  border-color: #84cc16;
+  background: linear-gradient(#84cc16, #4d7c0f);
+}
+
+/* April • Sakura Blossom */
+[data-theme="apr-sakura"], [data-theme="rose-pink"] {
+  --psp-accent: #f472b6;
+  --psp-accent-dark: #be185d;
+}
+[data-theme="apr-sakura"] .psp-wave-ribbon,
+[data-theme="rose-pink"] .psp-wave-ribbon {
+  filter: hue-rotate(320deg) saturate(1.2) contrast(1.1);
+}
+[data-theme="apr-sakura"] .psp-read-btn,
+[data-theme="rose-pink"] .psp-read-btn {
+  border-color: #ec4899;
+  background: linear-gradient(#ec4899, #be185d);
+}
+
+/* May • Emerald Forest */
+[data-theme="may-emerald"], [data-theme="emerald-green"] {
+  --psp-accent: #22c55e;
+  --psp-accent-dark: #15803d;
+}
+[data-theme="may-emerald"] .psp-wave-ribbon,
+[data-theme="emerald-green"] .psp-wave-ribbon {
+  filter: hue-rotate(120deg) saturate(1.25) contrast(1.1);
+}
+[data-theme="may-emerald"] .psp-read-btn,
+[data-theme="emerald-green"] .psp-read-btn {
+  border-color: #22c55e;
+  background: linear-gradient(#22c55e, #15803d);
+}
+
+/* June • Summer Sky */
+[data-theme="jun-sky"] {
+  --psp-accent: #38bdf8;
+  --psp-accent-dark: #0369a1;
+}
+[data-theme="jun-sky"] .psp-wave-ribbon {
+  filter: hue-rotate(185deg) saturate(1.25) contrast(1.1);
+}
+[data-theme="jun-sky"] .psp-read-btn {
+  border-color: #38bdf8;
+  background: linear-gradient(#38bdf8, #0369a1);
+}
+
+/* July • Ocean Cyan */
+[data-theme="jul-cyan"] {
+  --psp-accent: #06b6d4;
+  --psp-accent-dark: #0e7490;
+}
+[data-theme="jul-cyan"] .psp-wave-ribbon {
+  filter: hue-rotate(165deg) saturate(1.3) contrast(1.1);
+}
+[data-theme="jul-cyan"] .psp-read-btn {
+  border-color: #06b6d4;
+  background: linear-gradient(#06b6d4, #0e7490);
+}
+
+/* August • Midnight Cobalt */
+[data-theme="aug-midnight"], [data-theme="midnight-blue"] {
+  --psp-accent: #3b82f6;
+  --psp-accent-dark: #1d4ed8;
+}
+[data-theme="aug-midnight"] .psp-wave-ribbon,
+[data-theme="midnight-blue"] .psp-wave-ribbon {
+  filter: hue-rotate(210deg) saturate(1.25) contrast(1.1);
+}
+[data-theme="aug-midnight"] .psp-read-btn,
+[data-theme="midnight-blue"] .psp-read-btn {
+  border-color: #3b82f6;
+  background: linear-gradient(#3b82f6, #1d4ed8);
+}
+
+/* September • Royal Amethyst */
+[data-theme="sep-amethyst"], [data-theme="royal-purple"] {
+  --psp-accent: #a855f7;
+  --psp-accent-dark: #6b21a8;
+}
+[data-theme="sep-amethyst"] .psp-wave-ribbon,
+[data-theme="royal-purple"] .psp-wave-ribbon {
+  filter: hue-rotate(275deg) saturate(1.25) contrast(1.1);
+}
+[data-theme="sep-amethyst"] .psp-read-btn,
+[data-theme="royal-purple"] .psp-read-btn {
+  border-color: #a855f7;
+  background: linear-gradient(#a855f7, #6b21a8);
+}
+
+/* October • Autumn Gold */
+[data-theme="oct-gold"], [data-theme="cyber-gold"] {
+  --psp-accent: #f59e0b;
+  --psp-accent-dark: #b45309;
+}
+[data-theme="oct-gold"] .psp-wave-ribbon,
+[data-theme="cyber-gold"] .psp-wave-ribbon {
+  filter: hue-rotate(30deg) saturate(1.35) contrast(1.15);
+}
+[data-theme="oct-gold"] .psp-read-btn,
+[data-theme="cyber-gold"] .psp-read-btn {
+  border-color: #f59e0b;
+  background: linear-gradient(#f59e0b, #b45309);
+}
+
+/* November • Warm Amber */
+[data-theme="nov-amber"] {
+  --psp-accent: #ea580c;
+  --psp-accent-dark: #9a3412;
+}
+[data-theme="nov-amber"] .psp-wave-ribbon {
+  filter: hue-rotate(15deg) saturate(1.3) contrast(1.1);
+}
+[data-theme="nov-amber"] .psp-read-btn {
+  border-color: #ea580c;
+  background: linear-gradient(#ea580c, #9a3412);
+}
+
+/* December • Deep Crimson Ruby */
+[data-theme="dec-ruby"] {
+  --psp-accent: #e11d48;
+  --psp-accent-dark: #9f1239;
+}
+[data-theme="dec-ruby"] .psp-wave-ribbon {
+  filter: hue-rotate(350deg) saturate(1.2) contrast(1.1);
+}
+[data-theme="dec-ruby"] .psp-read-btn {
+  border-color: #e11d48;
+  background: linear-gradient(#e11d48, #9f1239);
+}
+
+/* Monolith Noir (OLED Minimal) */
+[data-theme="monolith-black"] {
+  --psp-accent: #ffffff;
+  --psp-accent-dark: #334155;
+}
+[data-theme="monolith-black"] .psp-wave-ribbon {
+  filter: grayscale(1) opacity(0.35);
+}
+[data-theme="monolith-black"] .psp-read-btn {
+  border-color: #ffffff;
+  background: linear-gradient(#444, #111);
+}
+
+/* Cyberpunk Neon */
+[data-theme="cyberpunk-neon"] {
+  --psp-accent: #00f0ff;
+  --psp-accent-dark: #7000ff;
+}
+[data-theme="cyberpunk-neon"] .psp-wave-ribbon {
+  filter: hue-rotate(155deg) saturate(2.4) contrast(1.25);
+}
+[data-theme="cyberpunk-neon"] .psp-read-btn {
+  border-color: #00f0ff;
+  background: linear-gradient(#00f0ff, #7000ff);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+}
